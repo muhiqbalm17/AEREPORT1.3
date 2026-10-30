@@ -1,0 +1,2367 @@
+<style>
+  /**
+   * ============================================================================
+   * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+   * File: css.html (Styling Engine: Clean Industrial Theme & Rigid Mobile Lock)
+   * ============================================================================
+   */
+
+  /* TEMA UTAMA: CLEAN INDUSTRIAL LIGHT DENGAN BORDER TEGAS & JELAS */
+  :root,
+  html[data-theme="default"],
+  body[data-theme="default"],
+  [data-theme="default"] {
+    --bg-body: #f4f6f9;
+    --card-bg: #ffffff;
+    --card-bg-subtle: #f8fafc;
+
+    /* PENEGASAN GARIS TEPI (HIGH-CONTRAST BORDERS) */
+    --border-color: #cbd5e1;
+    --border-card: #b6c2d1;
+    --border-subtle: #e2e8f0;
+    --input-bg: #ffffff;
+    --input-border: #94a3b8;
+
+    --accent-orange: #d97706;
+    --accent-orange-hover: #b45309;
+    --accent-orange-light: rgba(217, 119, 6, 0.12);
+
+    --accent-blue: #0284c7;
+    --accent-green: #059669;
+    --accent-red: #dc2626;
+
+    --text-main: #0f172a;
+    --text-muted: #475569;
+    --text-dim: #64748b;
+
+    --topbar-height: 64px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --card-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* PENGUNCIAN ROOT VIEWPORT: ANTI-GESER HORIZONTAL PATEN (100% PRESISI RATA KIRI-KANAN) */
+  html {
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    overflow-x: clip !important;
+    position: relative !important;
+    box-sizing: border-box !important;
+    -webkit-text-size-adjust: 100%;
+    touch-action: manipulation;
+    overscroll-behavior-x: none !important;
+    overscroll-behavior-y: auto;
+  }
+
+  body {
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-height: 100vh;
+    overflow-x: hidden !important;
+    overflow-x: clip !important;
+    position: relative !important;
+    background-color: var(--bg-body) !important;
+    color: var(--text-main);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    touch-action: manipulation;
+    overscroll-behavior-x: none !important;
+    overscroll-behavior-y: auto;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  body:has(.modal-backdrop.active) {
+    overflow: hidden !important;
+  }
+
+  /* HEADER (TOPBAR): DIKUNCI KE WARNA GELAP EKSISTING */
+  .topbar {
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    width: 100%;
+    max-width: 100%;
+    height: var(--topbar-height);
+    background-color: #0d1525 !important;
+    border-bottom: 2px solid #233552 !important;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    box-sizing: border-box;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+  }
+
+  .brand-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  /* WADAH LOGO RESMI PT SAMUDERA MULIA ABADI (SMA) - INTERAKTIF HIDDEN GATEWAY */
+  .topbar-logo-container {
+    width: auto;
+    min-width: 42px;
+    max-width: 120px;
+    height: 42px;
+    min-height: 42px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    background: #ffffff;
+    padding: 2px 4px;
+    box-sizing: border-box;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  }
+
+  .topbar-logo-container:hover {
+    transform: scale(1.05);
+    box-shadow: 0 3px 12px rgba(217, 119, 6, 0.45);
+    filter: brightness(1.02);
+  }
+
+  .topbar-logo-container:active {
+    transform: scale(0.96);
+  }
+
+  .topbar-logo-container svg,
+  .topbar-logo-container img {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .ae-badge {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #070d18;
+    font-weight: 900;
+    font-size: 15px;
+    padding: 6px 11px;
+    border-radius: var(--radius-sm);
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+    flex-shrink: 0;
+  }
+
+  .brand-title {
+    font-size: 15px;
+    font-weight: 900;
+    color: #ffffff !important;
+    letter-spacing: 0.5px;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .brand-subtitle {
+    font-size: 11.5px;
+    color: #94a3b8 !important;
+    margin-top: 2px;
+    font-weight: 500;
+  }
+
+  .btn-topbar-settings {
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-md);
+    background: #111c30 !important;
+    border: 1.5px solid #2e4369 !important;
+    color: #94a3b8 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .btn-topbar-settings:hover {
+    color: #f59e0b !important;
+    border-color: #f59e0b !important;
+    background: rgba(245, 158, 11, 0.15) !important;
+    transform: rotate(30deg);
+  }
+
+  /* TAB NAVIGASI: DIKUNCI KE WARNA GELAP DENGAN GARIS PEMISAH & BORDER BAWAH LEBIH TEGAS */
+  .nav-tabs-wrapper {
+    position: -webkit-sticky;
+    position: sticky;
+    top: var(--topbar-height);
+    z-index: 190;
+    width: 100%;
+    max-width: 100vw !important;
+    background-color: #070d18 !important;
+    border-bottom: 2.5px solid #2e4369 !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain !important;
+    overscroll-behavior: contain !important;
+    touch-action: pan-x pan-y !important;
+    box-sizing: border-box;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+  }
+
+  .nav-tabs-wrapper::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-tabs {
+    display: flex;
+    padding: 0 16px;
+    gap: 0;
+    min-width: max-content;
+    box-sizing: border-box;
+  }
+
+  .nav-item {
+    padding: 13px 18px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #94a3b8 !important;
+    cursor: pointer;
+    border-bottom: 3.5px solid transparent;
+    border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+    transition: all 0.2s ease;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .nav-item:first-child {
+    border-left: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+
+  .nav-item:hover {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+  }
+
+  .nav-item.active {
+    color: #f59e0b !important;
+    border-bottom-color: #f59e0b !important;
+    background: rgba(245, 158, 11, 0.16) !important;
+  }
+
+  /* HIDDEN GATEWAY: SEMBUNYIKAN TAB PRODUKTIVITAS MEKANIK DARI NAVBAR */
+  #nav-item-productivity {
+    display: none !important;
+  }
+
+  /* CONTAINER APLIKASI: RIGID BOUNDS */
+  .app-container {
+    width: 100%;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 20px 16px 60px 16px;
+    box-sizing: border-box;
+    overflow-x: hidden !important;
+  }
+
+  .tab-content {
+    display: none;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden !important;
+  }
+
+  .tab-content.active {
+    display: block;
+    animation: fadeInTab 0.2s ease;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden !important;
+  }
+
+  @keyframes fadeInTab {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* KARTU KONTEN DENGAN GARIS TEPI (BORDER) DIPERJELAS & SOLID */
+  .card {
+    background-color: var(--card-bg) !important;
+    border: 1.5px solid var(--border-card) !important;
+    border-radius: var(--radius-lg);
+    padding: 22px;
+    margin-bottom: 20px;
+    box-shadow: var(--card-shadow);
+    transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden !important;
+  }
+
+  .card-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 1.5px solid var(--border-color) !important;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .form-header-box {
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1.5px solid var(--border-color) !important;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .form-main-heading {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--text-main) !important;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+
+  .form-sub-heading {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 3px;
+    line-height: 1.35;
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  #tab-dashboard .metrics-grid {
+    grid-template-columns: repeat(8, 1fr);
+  }
+
+  @media (max-width: 1280px) {
+    #tab-dashboard .metrics-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  /* KARTU METRIK DENGAN GARIS TEPI DIPERJELAS */
+  .metric-card {
+    background: var(--card-bg) !important;
+    border: 1.5px solid var(--border-card) !important;
+    border-radius: var(--radius-md);
+    padding: 14px 12px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .metric-card:hover {
+    border-color: var(--accent-orange) !important;
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  }
+
+  .metric-card:active {
+    transform: translateY(-1px);
+  }
+
+  .metric-value {
+    font-size: 16px;
+    font-weight: 900;
+    color: var(--text-main);
+    letter-spacing: 0.3px;
+    line-height: 1.1;
+  }
+
+  .metric-value.kpi {
+    color: var(--accent-green) !important;
+  }
+
+  .metric-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    line-height: 1.3;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0 !important;
+  }
+
+  .form-group.full-width {
+    grid-column: 1 / -1;
+  }
+
+  label {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-main);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  /* INPUT & SELECT: RIGID BOUNDS */
+  input,
+  select,
+  textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    background-color: var(--input-bg) !important;
+    border: 1.5px solid var(--input-border) !important;
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
+    color: var(--text-main) !important;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    box-sizing: border-box !important;
+    display: block;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--accent-orange) !important;
+    box-shadow: 0 0 0 3px var(--accent-orange-light);
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 70px;
+  }
+
+  input[type="date"],
+  input[type="time"] {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    cursor: pointer;
+    color-scheme: light;
+    min-height: 38px;
+    line-height: 1.3;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.6;
+    padding: 2px;
+  }
+
+  input[type="date"]::-webkit-inner-spin-button,
+  input[type="time"]::-webkit-inner-spin-button,
+  input[type="date"]::-webkit-clear-button,
+  input[type="time"]::-webkit-clear-button {
+    display: none !important;
+    -webkit-appearance: none !important;
+  }
+
+  .status-select-rfu {
+    border: 1.5px solid rgba(5, 150, 105, 0.75) !important;
+    color: #059669 !important;
+    background-color: rgba(5, 150, 105, 0.08) !important;
+    font-weight: 700 !important;
+  }
+
+  .status-select-continue {
+    border: 1.5px solid rgba(217, 119, 6, 0.75) !important;
+    color: #d97706 !important;
+    background-color: rgba(217, 119, 6, 0.08) !important;
+    font-weight: 700 !important;
+  }
+
+  .status-select-waiting {
+    border: 1.5px solid rgba(220, 38, 38, 0.75) !important;
+    color: #dc2626 !important;
+    background-color: rgba(220, 38, 38, 0.08) !important;
+    font-weight: 700 !important;
+  }
+
+  .multi-photo-uploader {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    margin-top: 4px;
+    box-sizing: border-box;
+  }
+
+  .multi-photo-dropzone {
+    border: 2px dashed var(--border-card) !important;
+    border-radius: var(--radius-md);
+    background: var(--card-bg-subtle);
+    padding: 16px 20px;
+    text-align: center;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    user-select: none;
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .multi-photo-dropzone:hover {
+    border-color: var(--accent-orange) !important;
+    background: var(--accent-orange-light);
+  }
+
+  .multi-photo-icon {
+    font-size: 22px;
+    color: var(--accent-orange);
+  }
+
+  .multi-photo-label {
+    font-size: 11.5px;
+    font-weight: 800;
+    color: var(--text-main);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  .multi-photo-hint {
+    font-size: 10.5px;
+    color: var(--text-muted);
+  }
+
+  .multi-photo-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+    width: 100%;
+    margin-top: 6px;
+    box-sizing: border-box;
+  }
+
+  .multi-photo-card {
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--card-bg-subtle);
+    border: 1.5px solid var(--border-card) !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    transition: transform 0.15s ease, border-color 0.15s ease;
+    box-sizing: border-box;
+  }
+
+  .multi-photo-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-orange) !important;
+  }
+
+  .multi-photo-thumb-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    background: #0f172a;
+  }
+
+  .multi-photo-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    cursor: pointer;
+  }
+
+  .multi-photo-caption-box {
+    padding: 6px;
+    background: #ffffff;
+    border-top: 1px solid var(--border-card);
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .multi-photo-caption-input {
+    width: 100% !important;
+    font-size: 11px !important;
+    padding: 5px 7px !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 3px !important;
+    color: #1e293b !important;
+    background: #f8fafc !important;
+    box-sizing: border-box !important;
+    outline: none !important;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .multi-photo-caption-input:focus {
+    border-color: var(--accent-orange) !important;
+    background: #ffffff !important;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2) !important;
+  }
+
+  .multi-photo-btn-delete {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(220, 38, 38, 0.92);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+    line-height: 1;
+    z-index: 10;
+    transition: all 0.15s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  }
+
+  .multi-photo-btn-delete:hover {
+    background: #b91c1c;
+    transform: scale(1.15);
+  }
+
+  .multi-photo-badge-idx {
+    position: absolute;
+    bottom: 5px;
+    left: 5px;
+    background: rgba(15, 23, 42, 0.85);
+    color: #ffffff;
+    border: 1px solid var(--border-card);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    pointer-events: none;
+  }
+
+  .btn-submit {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #ffffff;
+    border: 1px solid #b45309;
+    border-radius: var(--radius-sm);
+    padding: 10px 20px;
+    font-size: 12.5px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 8px rgba(217, 119, 6, 0.25);
+    box-sizing: border-box;
+  }
+
+  .btn-submit:hover {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
+    transform: translateY(-1px);
+  }
+
+  .btn-submit:disabled,
+  .btn-submit.btn-loading {
+    opacity: 0.82 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15) !important;
+    pointer-events: none !important;
+    transition: all 0.1s ease !important;
+  }
+
+  .btn-secondary {
+    background: #ffffff;
+    border: 1.5px solid var(--border-card) !important;
+    color: var(--text-main);
+    border-radius: var(--radius-sm);
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--text-muted) !important;
+    background: #f1f5f9;
+  }
+
+  .btn-export-pdf {
+    background: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
+    border: 1.5px solid rgba(220, 38, 38, 0.45) !important;
+    border-radius: var(--radius-sm);
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+  }
+
+  .btn-export-pdf:hover {
+    background: rgba(220, 38, 38, 0.2);
+  }
+
+  /* SUB-NAVIGASI MENU DENGAN GARIS TEPI SOLID */
+  .subnav-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--card-bg) !important;
+    border: 1.5px solid var(--border-card) !important;
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    margin-bottom: 14px;
+    gap: 10px;
+    flex-wrap: wrap;
+    box-shadow: var(--card-shadow);
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden !important;
+  }
+
+  .subnav-pill-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  .subnav-pill {
+    background: var(--card-bg-subtle);
+    border: 1.5px solid var(--border-card) !important;
+    color: var(--text-muted);
+    border-radius: var(--radius-sm);
+    padding: 7px 12px;
+    font-size: 11.5px;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+    box-sizing: border-box;
+  }
+
+  .subnav-pill:hover {
+    color: #0d1525;
+    border-color: #233552 !important;
+    background: rgba(13, 21, 37, 0.05);
+  }
+
+  /* WARNA PILIHAN SUB-TAB DISAMAKAN DENGAN WARNA HEADER (#0d1525) */
+  .subnav-pill.active {
+    background: #0d1525 !important;
+    color: #ffffff !important;
+    border-color: #233552 !important;
+    box-shadow: 0 2px 8px rgba(13, 21, 37, 0.25);
+  }
+
+  .subnav-site-tag {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+
+  .report-subcontent,
+  .breakdown-subcontent,
+  .pm-subcontent,
+  .insp-subcontent {
+    display: none;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden !important;
+  }
+
+  .report-subcontent.active,
+  .breakdown-subcontent.active,
+  .pm-subcontent.active,
+  .insp-subcontent.active {
+    display: block;
+    animation: fadeInTab 0.15s ease;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden !important;
+  }
+
+  /* ============================================================================
+   * TABEL DATA PERSIS REFERENSI (DARK NAVY HEADER + FULL SOLID GRID DI SEMUA TAB)
+   * ============================================================================ */
+  .table-container,
+  .table-responsive {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: auto;
+    max-height: 465px !important;
+    border-radius: var(--radius-md);
+    border: 1.5px solid #1e293b !important;
+    background: #ffffff !important;
+    scrollbar-width: thin;
+    scrollbar-color: #94a3b8 transparent;
+    box-sizing: border-box;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-x: contain !important;
+    overscroll-behavior: contain !important;
+    touch-action: pan-x pan-y !important;
+  }
+
+  .table-container thead th,
+  .table-responsive thead th {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 5 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  }
+
+  .table-container::-webkit-scrollbar,
+  .table-responsive::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+
+  .table-container::-webkit-scrollbar-thumb,
+  .table-responsive::-webkit-scrollbar-thumb {
+    background: #94a3b8;
+    border-radius: 4px;
+  }
+
+  .table-container table,
+  table:not(.pdf-print-template-root):not(.pdf-print-template-root *) {
+    width: 100%;
+    border-collapse: collapse !important;
+    border-spacing: 0;
+    font-size: 12px;
+    text-align: left;
+    background: #ffffff !important;
+    margin: 0 !important;
+  }
+
+  .table-container th,
+  th:not(.pdf-print-template-root *) {
+    background: #1e293b !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    padding: 10px 12px !important;
+    text-transform: uppercase !important;
+    font-size: 11px !important;
+    letter-spacing: 0.5px !important;
+    border: 1px solid #334155 !important;
+    white-space: nowrap !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+    vertical-align: middle !important;
+  }
+
+  .table-container td,
+  td:not(.pdf-print-template-root *) {
+    padding: 8px 12px !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #334155 !important;
+    background: #ffffff !important;
+    vertical-align: middle !important;
+    font-size: 12px !important;
+    transition: background 0.15s ease;
+  }
+
+  .table-container td strong,
+  td:not(.pdf-print-template-root *) strong {
+    color: #0f172a !important;
+  }
+
+  tbody tr {
+    transition: background 0.15s ease;
+  }
+
+  .table-container tbody tr:hover td,
+  tbody tr:hover td:not(.pdf-print-template-root *) {
+    background: #f8fafc !important;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overscroll-behavior: contain;
+    box-sizing: border-box;
+  }
+
+  .modal-backdrop.active {
+    display: flex;
+    animation: fadeInModal 0.2s ease;
+  }
+
+  @keyframes fadeInModal {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  .modal-content {
+    background: #ffffff !important;
+    border: 1.5px solid var(--border-card) !important;
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 650px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 20px;
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.18);
+    overscroll-behavior: contain;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+    box-sizing: border-box;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1.5px solid var(--border-color) !important;
+    flex-shrink: 0;
+  }
+
+  .modal-close {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+  }
+
+  .modal-close:hover {
+    color: var(--text-main);
+  }
+
+  #viewModalDeskripsi,
+  #viewFarModalRootCause,
+  #viewFarModalActionTaken,
+  #viewFarModalPreventionPlan,
+  #farPdfRootCause,
+  #farPdfActionTaken,
+  #farPdfPreventionPlan {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    white-space: pre-wrap !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  #dashMetricChartModal .modal-content {
+    max-width: 950px !important;
+    width: 95vw !important;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 24px;
+  }
+
+  #dashMetricModalStatBar {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--card-bg-subtle);
+    border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border-card) !important;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+
+  .dash-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+  }
+
+  .dash-stat-pill strong {
+    color: var(--text-main);
+    font-size: 13px;
+  }
+
+  .dash-chart-box {
+    background: var(--card-bg-subtle);
+    border: 1.5px solid var(--border-card) !important;
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin-bottom: 16px;
+    flex-shrink: 0;
+    position: relative;
+    box-sizing: border-box;
+  }
+
+  .dash-chart-canvas-wrapper {
+    position: relative;
+    height: 260px;
+    width: 100%;
+  }
+
+  #dashMetricTable {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    border: 1.5px solid #1e293b !important;
+    background: #ffffff !important;
+    margin: 0 !important;
+  }
+
+  #dashMetricTable th {
+    background: #1e293b !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    border: 1px solid #334155 !important;
+    padding: 10px 12px !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 15 !important;
+    vertical-align: middle !important;
+    white-space: nowrap !important;
+  }
+
+  #dashMetricTable td {
+    background: #ffffff !important;
+    color: #334155 !important;
+    border: 1px solid #cbd5e1 !important;
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+    vertical-align: middle !important;
+    transition: background 0.15s ease;
+  }
+
+  #dashMetricTable tbody tr:hover td {
+    background: #f8fafc !important;
+  }
+
+  /* Badge Pill Styling Persis Gambar Screenshot */
+  .dash-status-pill-rfu {
+    border: 1.5px solid #10b981 !important;
+    color: #059669 !important;
+    background: #ecfdf5 !important;
+    font-weight: 800 !important;
+    font-size: 11px !important;
+    padding: 2.5px 10px !important;
+    border-radius: 4px !important;
+    display: inline-block !important;
+    letter-spacing: 0.3px !important;
+    text-align: center !important;
+  }
+
+  .dash-status-pill-continue {
+    border: 1.5px solid #f59e0b !important;
+    color: #d97706 !important;
+    background: #fffbeb !important;
+    font-weight: 800 !important;
+    font-size: 11px !important;
+    padding: 2.5px 8px !important;
+    border-radius: 4px !important;
+    display: inline-block !important;
+    letter-spacing: 0.3px !important;
+    text-align: center !important;
+  }
+
+  .dash-status-pill-waiting {
+    border: 1.5px solid #ef4444 !important;
+    color: #dc2626 !important;
+    background: #fef2f2 !important;
+    font-weight: 800 !important;
+    font-size: 11px !important;
+    padding: 2.5px 8px !important;
+    border-radius: 4px !important;
+    display: inline-block !important;
+    letter-spacing: 0.3px !important;
+    text-align: center !important;
+  }
+
+  #matrixDetailModal {
+    padding: 0 !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+  }
+
+  #matrixDetailModal .modal-content {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 100vh !important;
+    height: 100vh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    padding: 18px 24px !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .settings-item-card {
+    background: var(--card-bg-subtle) !important;
+    border: 1.5px solid var(--border-card) !important;
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+    box-sizing: border-box;
+  }
+
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .toast {
+    background: #ffffff;
+    border: 1.5px solid var(--border-card) !important;
+    color: var(--text-main);
+    padding: 10px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 12.5px;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
+    animation: slideUpToast 0.25s ease;
+  }
+
+  .toast-success {
+    border-left: 4px solid var(--accent-green) !important;
+  }
+
+  .toast-error {
+    border-left: 4px solid var(--accent-red) !important;
+  }
+
+  @keyframes slideUpToast {
+    from {
+      transform: translateY(12px);
+      opacity: 0;
+    }
+
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  /* PROTEKSI KONTRAS: Mengubah teks inline #ffffff di dalam kartu dan tabel agar tajam di latar putih */
+  .card strong[style*="color: #ffffff"],
+  .card strong[style*="color:#ffffff"],
+  .table-container strong[style*="color: #ffffff"],
+  .table-container strong[style*="color:#ffffff"],
+  .modal-content strong[style*="color: #ffffff"],
+  .modal-content strong[style*="color:#ffffff"],
+  #subtabReportCardsContainer strong[style*="color: #ffffff"],
+  #breakdownCardsContainer strong[style*="color: #ffffff"],
+  #pmHistoryCardsContainer strong[style*="color: #ffffff"],
+  #pmTodayListContainer strong[style*="color: #ffffff"],
+  #pmTomorrowListContainer strong[style*="color: #ffffff"],
+  #viewModalUnit,
+  #viewFarModalUnit {
+    color: var(--text-main) !important;
+  }
+
+  /* ============================================================================
+   * PENGUNCIAN MATI KHUSUS MOBILE (SMARTPHONE) - 100% PRESISI RATA KIRI-KANAN
+   * ============================================================================ */
+  @media (max-width: 768px) {
+    :root {
+      --topbar-height: 54px;
+    }
+
+    /* ROOT LEVEL: TIDAK BISA DIGESER / DIGOYANG HORIZONTAL */
+    html,
+    body {
+      width: 100% !important;
+      max-width: 100vw !important;
+      overflow-x: hidden !important;
+      overflow-x: clip !important;
+      position: relative !important;
+      touch-action: manipulation;
+      overscroll-behavior-x: none !important;
+      overscroll-behavior-y: auto;
+      box-sizing: border-box !important;
+    }
+
+    body {
+      padding-bottom: env(safe-area-inset-bottom, 16px);
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+    }
+
+    /* HEADER (TOPBAR): NATURAL FLOW & SAFE-AREA AWARE */
+    .topbar {
+      position: relative !important;
+      top: auto !important;
+      padding: 8px 12px;
+      padding-top: max(8px, env(safe-area-inset-top));
+      width: 100% !important;
+      max-width: 100vw !important;
+      min-height: auto !important;
+      height: auto !important;
+      box-sizing: border-box !important;
+      overflow: visible !important;
+      z-index: 100 !important;
+    }
+
+    .topbar-logo-container {
+      width: auto !important;
+      min-width: 36px !important;
+      max-width: 90px !important;
+      height: 36px !important;
+      min-height: 36px !important;
+      border-radius: 4px !important;
+      padding: 1.5px 3px !important;
+    }
+
+    .brand-title {
+      font-size: 11px !important;
+      letter-spacing: 0.1px;
+      line-height: 1.2 !important;
+    }
+
+    .brand-subtitle {
+      font-size: 8.5px !important;
+      line-height: 1.2 !important;
+    }
+
+    .ae-badge {
+      font-size: 13px;
+      padding: 4px 8px;
+    }
+
+    /* NAVBAR & TABS: ERGONOMIS & SMOOTH HORIZONTAL SWIPE (STICKY DI PUNCAK LAYAR HP) */
+    .nav-tabs-wrapper {
+      position: -webkit-sticky !important;
+      position: sticky !important;
+      top: 0 !important;
+      z-index: 195 !important;
+      width: 100% !important;
+      max-width: 100vw !important;
+      box-sizing: border-box !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      -webkit-overflow-scrolling: touch !important;
+      touch-action: pan-x pan-y !important;
+      overscroll-behavior-x: contain !important;
+      overscroll-behavior-y: auto !important;
+      scrollbar-width: none !important;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45) !important;
+    }
+
+    .nav-tabs-wrapper::-webkit-scrollbar {
+      display: none !important;
+    }
+
+    .nav-tabs {
+      padding: 0 8px !important;
+      gap: 0 !important;
+      box-sizing: border-box !important;
+      min-width: max-content !important;
+    }
+
+    .nav-item {
+      padding: 10px 13px !important;
+      font-size: 11px !important;
+      min-height: 40px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      white-space: nowrap !important;
+      touch-action: manipulation;
+    }
+
+    /* CONTAINER APLIKASI DI HP: PADDING KIRI-KANAN 10PX TETAP & SIMETRIS ANDROID / IOS */
+    .app-container {
+      padding: 12px max(10px, env(safe-area-inset-right, 10px)) 50px max(10px, env(safe-area-inset-left, 10px)) !important;
+      width: 100% !important;
+      max-width: 100vw !important;
+      box-sizing: border-box !important;
+      overflow-x: hidden !important;
+      overflow-x: clip !important;
+    }
+
+    /* KARTU KONTEN (.card) DI HP: TERKUNCI PERSIS DI DALAM PADDING CONTAINER DENGAN 4 SISI BORDER UTUH */
+    .card {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+      padding: 14px 12px !important;
+      border-radius: var(--radius-md) !important;
+      margin: 0 0 14px 0 !important;
+      border: 1.5px solid var(--border-card) !important;
+      overflow: hidden !important;
+      box-shadow: 0 1px 5px rgba(15, 23, 42, 0.08) !important;
+    }
+
+    /* SUB-NAVIGASI MENU DI HP */
+    .subnav-container {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+      margin: 0 0 14px 0 !important;
+      padding: 8px 10px !important;
+      gap: 8px !important;
+      border-radius: var(--radius-md) !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      overflow: visible !important;
+    }
+
+    .subnav-pill-group {
+      width: 100% !important;
+      max-width: 100% !important;
+      display: flex !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      flex-wrap: nowrap !important;
+      scrollbar-width: none !important;
+      -webkit-overflow-scrolling: touch !important;
+      padding-bottom: 4px !important;
+      padding-right: 18px !important;
+      box-sizing: border-box !important;
+      touch-action: pan-x pan-y !important;
+      overscroll-behavior-x: contain !important;
+      overscroll-behavior-y: auto !important;
+      gap: 6px !important;
+    }
+
+    .subnav-pill-group::-webkit-scrollbar {
+      display: none !important;
+    }
+
+    .subnav-pill {
+      flex-shrink: 0 !important;
+      white-space: nowrap !important;
+      font-size: 11px !important;
+      padding: 6px 11px !important;
+      min-height: 32px !important;
+      box-sizing: border-box !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    .subnav-site-tag {
+      font-size: 10px !important;
+      margin-top: 2px !important;
+    }
+
+    .subnav-container>div:last-child {
+      width: 100% !important;
+      max-width: 100% !important;
+      display: flex !important;
+      gap: 6px !important;
+      align-items: center !important;
+      box-sizing: border-box !important;
+    }
+
+    #subtabUnitPdfSelect {
+      flex: 1 1 auto !important;
+      min-width: 0 !important;
+      width: auto !important;
+      font-size: 12px !important;
+      padding: 6px 8px !important;
+    }
+
+    #btnDownloadUnitPdf {
+      flex: 0 0 auto !important;
+      white-space: nowrap !important;
+      padding: 6px 10px !important;
+      font-size: 11.5px !important;
+    }
+
+    /* BARIS JUDUL KARTU (.card-title) DI HP */
+    .card-title {
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 10px !important;
+      margin-bottom: 12px !important;
+      padding-bottom: 10px !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+
+    .card-title>div:last-child {
+      width: 100% !important;
+      max-width: 100% !important;
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 6px !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      box-sizing: border-box !important;
+    }
+
+    /* BARIS 1 FILTER DASHBOARD: BULAN + TAHUN + TOMBOL TERAPKAN */
+    .card-title select#dashMonth {
+      flex: 1 1 0% !important;
+      min-width: 0 !important;
+      width: auto !important;
+      padding: 7px 8px !important;
+      font-size: 12px !important;
+      box-sizing: border-box !important;
+    }
+
+    .card-title select#dashYear {
+      flex: 0 0 74px !important;
+      min-width: 74px !important;
+      max-width: 74px !important;
+      width: 74px !important;
+      padding: 7px 6px !important;
+      font-size: 12px !important;
+      box-sizing: border-box !important;
+    }
+
+    .card-title button,
+    .card-title #btnApplyDashboardFilter {
+      flex: 0 0 auto !important;
+      min-width: 0 !important;
+      white-space: nowrap !important;
+      padding: 7px 11px !important;
+      font-size: 11.5px !important;
+      font-weight: 800 !important;
+      box-sizing: border-box !important;
+    }
+
+    /* BARIS 2 FILTER DASHBOARD: CETAK REKAPITULASI (BULANAN/TAHUNAN) */
+    .card-title>div:last-child>div[style*="display: flex"] {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin-left: 0 !important;
+      margin-top: 4px !important;
+      display: flex !important;
+      gap: 6px !important;
+      box-sizing: border-box !important;
+      align-items: center !important;
+    }
+
+    .card-title>div:last-child>div[style*="display: flex"] select,
+    #dashPrintPeriodType {
+      flex: 1 1 0% !important;
+      min-width: 0 !important;
+      width: 0 !important;
+      max-width: 100% !important;
+      padding: 7px 8px !important;
+      font-size: 11.5px !important;
+      box-sizing: border-box !important;
+    }
+
+    .card-title>div:last-child>div[style*="display: flex"] button,
+    #btnDownloadDashPdf {
+      flex: 1 1 0% !important;
+      min-width: 0 !important;
+      width: 0 !important;
+      max-width: 100% !important;
+      white-space: nowrap !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      padding: 7px 6px !important;
+      font-size: 11px !important;
+      box-sizing: border-box !important;
+    }
+
+    /* PENGUNCIAN FORMULIR & INPUT DI HP: 100% MENYESUAIKAN DI DALAM KARTU */
+    form {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+
+    .form-grid {
+      grid-template-columns: 100% !important;
+      gap: 10px !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    .form-group {
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+
+    input,
+    select,
+    textarea {
+      font-size: 14px !important;
+      padding: 8px 10px !important;
+      border-width: 1.5px !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+      display: block !important;
+      -webkit-appearance: none !important;
+      appearance: none !important;
+    }
+
+    input[type="date"],
+    input[type="time"] {
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+      display: block !important;
+      background-color: var(--input-bg) !important;
+      border: 1.5px solid var(--input-border) !important;
+      border-radius: var(--radius-sm) !important;
+      padding: 8px 10px !important;
+      font-size: 14px !important;
+      min-height: 38px !important;
+    }
+
+    /* ERGONOMI TOMBOL AKSI FORMULIR (RESET & SIMPAN) DI HP */
+    form div[style*="display: flex"][style*="justify-content: flex-end"],
+    form div[style*="display: flex"][style*="justify-content: space-between"] {
+      width: 100% !important;
+      max-width: 100% !important;
+      flex-direction: column-reverse !important;
+      gap: 8px !important;
+      box-sizing: border-box !important;
+    }
+
+    form div[style*="justify-content: flex-end"] button,
+    form div[style*="justify-content: space-between"] button,
+    .btn-submit,
+    .btn-secondary {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+      text-align: center !important;
+      justify-content: center !important;
+      min-height: 40px !important;
+      font-size: 13px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+    }
+
+    /* PENGECUALIAN TOMBOL AKSI COMPACT DI CARD TITLE & TABEL */
+    .card-title .btn-secondary,
+    .card-title button,
+    .btn-auto-width,
+    .data-table button,
+    table button {
+      width: auto !important;
+      max-width: max-content !important;
+      min-height: 32px !important;
+      padding: 6px 14px !important;
+      font-size: 11.5px !important;
+      font-weight: 700 !important;
+      display: inline-flex !important;
+      align-self: flex-start !important;
+    }
+
+    /* FILTER JADWAL INSPEKSI DI MOBILE */
+    .insp-filter-panel {
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 12px !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    .insp-filter-unit-row {
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      gap: 6px !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    .insp-filter-unit-row .subnav-pill-group,
+    .insp-filter-sys-search-row .subnav-pill-group {
+      width: 100% !important;
+      max-width: 100% !important;
+      display: flex !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      padding-bottom: 4px !important;
+      padding-right: 20px !important;
+      -webkit-overflow-scrolling: touch !important;
+      box-sizing: border-box !important;
+    }
+
+    .insp-filter-sys-search-row {
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 8px !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    .insp-filter-sys-search-row input#inspScheduleSearch {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+      font-size: 13px !important;
+      padding: 9px 12px !important;
+      min-height: 38px !important;
+      border-radius: var(--radius-sm) !important;
+    }
+
+    /* BARIS INPUT TEKNISI/MEKANIK DENGAN TOMBOL TAMBAH DI HP */
+    .form-group div[style*="display: flex"] {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+      min-width: 0 !important;
+    }
+
+    #repMekanikInput,
+    #pmMekanikInput,
+    #inspInspektorInput {
+      min-width: 0 !important;
+      flex: 1 1 0% !important;
+      width: 0 !important;
+    }
+
+    /* FILTER DAN PENCARIAN DI SELURUH TAB DI HP (100% FLUID) */
+    #subtabLogSearch,
+    #subtabFilterKategori,
+    #batSearchKeyword,
+    #batFilterTindakan,
+    #brkLogSearch,
+    #pmScheduleStatusFilter,
+    #pmScheduleSearch,
+    #prodSearchInput,
+    #masterUnitSearchInput,
+    #pmHistorySearchInput,
+    #pmHistoryLevelFilter {
+      width: 100% !important;
+      max-width: 100% !important;
+      flex: 1 1 100% !important;
+      box-sizing: border-box !important;
+      min-height: 38px !important;
+      font-size: 13.5px !important;
+    }
+
+    /* METRIK GRID DI HP: RAPI 2 KOLOM DENGAN MINMAX(0, 1FR) ANTI-OVERFLOW */
+    .metrics-grid,
+    #tab-dashboard .metrics-grid,
+    [style*="grid-template-columns: repeat(3"],
+    [style*="grid-template-columns: repeat(4"],
+    [style*="grid-template-columns: repeat(5"],
+    [style*="grid-template-columns: repeat(auto-fit"] {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 6px !important;
+      margin-bottom: 8px !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    .metric-card {
+      padding: 9px 6px !important;
+      min-height: 56px !important;
+      gap: 3px !important;
+      border-radius: var(--radius-sm) !important;
+      border-width: 1.5px !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+
+    .metric-value {
+      font-size: 14px !important;
+      line-height: 1.15 !important;
+      max-width: 100% !important;
+      word-break: break-word !important;
+      overflow-wrap: break-word !important;
+      text-align: center !important;
+    }
+
+    #dashCardTopCategory {
+      font-size: 12px !important;
+      line-height: 1.15 !important;
+      max-width: 100% !important;
+      word-break: break-word !important;
+      overflow-wrap: break-word !important;
+      white-space: normal !important;
+      text-align: center !important;
+    }
+
+    .metric-label {
+      font-size: 8.5px !important;
+      line-height: 1.25 !important;
+      letter-spacing: 0.15px !important;
+      max-width: 100% !important;
+      word-break: break-word !important;
+      overflow-wrap: break-word !important;
+      text-align: center !important;
+    }
+
+    /* Subtitle helper di kartu baterai dll */
+    .metric-card>div:last-child:not(.metric-value):not(.metric-label) {
+      font-size: 8px !important;
+      line-height: 1.2 !important;
+      margin-top: 1px !important;
+      max-width: 100% !important;
+      word-break: break-word !important;
+    }
+
+    .metrics-grid .metric-card:last-child:nth-child(odd) {
+      grid-column: 1 / -1 !important;
+      padding: 10px 12px !important;
+    }
+
+    [style*="minmax(320px"] {
+      grid-template-columns: 1fr !important;
+    }
+
+    /* TABEL DATA DI HP: PADAT & SKALA FONT PRESISI */
+    .table-container,
+    .table-responsive {
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: auto !important;
+      overflow-y: auto !important;
+      max-height: 380px !important;
+      -webkit-overflow-scrolling: touch !important;
+      touch-action: pan-x pan-y !important;
+      overscroll-behavior-x: contain !important;
+      overscroll-behavior-y: auto !important;
+      border-radius: var(--radius-sm) !important;
+    }
+
+    .table-container table,
+    .table-responsive table,
+    table:not(.pdf-print-template-root):not(.pdf-print-template-root *) {
+      width: max-content !important;
+      min-width: 100% !important;
+    }
+
+    #inspScheduleTable {
+      min-width: 780px !important;
+      width: max-content !important;
+    }
+
+    #inspScheduleTable th,
+    #inspScheduleTable td {
+      white-space: nowrap !important;
+    }
+
+    th:not(.pdf-print-template-root *) {
+      padding: 8px 8px !important;
+      font-size: 9.5px !important;
+      letter-spacing: 0.3px !important;
+      white-space: nowrap !important;
+      position: sticky !important;
+      top: 0 !important;
+      z-index: 10 !important;
+    }
+
+    td:not(.pdf-print-template-root *) {
+      padding: 7px 8px !important;
+      font-size: 11px !important;
+      line-height: 1.3 !important;
+    }
+
+    .multi-photo-gallery {
+      grid-template-columns: repeat(3, 1fr) !important;
+      gap: 6px !important;
+    }
+
+    .toast-container {
+      left: 10px !important;
+      right: 10px !important;
+      bottom: max(14px, env(safe-area-inset-bottom)) !important;
+      width: auto !important;
+    }
+
+    .toast {
+      width: 100% !important;
+      font-size: 12px !important;
+      padding: 9px 12px !important;
+    }
+
+    /* MODAL POP-UP DI HP: 100% FLUID & PRESISI */
+    .modal-backdrop {
+      padding: 8px !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    .modal-content,
+    #dashMetricChartModal .modal-content,
+    #viewReportModal .modal-content,
+    #viewFarModal .modal-content,
+    #editReportModal .modal-content,
+    #deleteConfirmModal .modal-content,
+    #deleteFarConfirmModal .modal-content,
+    #adminPinModal .modal-content,
+    #addCategoryModal .modal-content,
+    #manageCategoryModal .modal-content,
+    #matrixDetailModal .modal-content,
+    #appSettingsModal .modal-content,
+    #pmHistoryModal .modal-content,
+    #viewPMDetailModal .modal-content,
+    #imageModal .modal-content {
+      width: 100% !important;
+      max-width: 100% !important;
+      max-height: 92vh !important;
+      padding: 14px 12px !important;
+      border-radius: var(--radius-md) !important;
+      box-sizing: border-box !important;
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch !important;
+    }
+
+    #viewReportModal [style*="grid-template-columns: 1fr 1fr"],
+    #viewFarModal [style*="grid-template-columns: 1fr 1fr"] {
+      grid-template-columns: 1fr !important;
+      gap: 6px !important;
+    }
+
+    .modal-content div[style*="display: flex"][style*="justify-content: flex-end"],
+    .modal-content div[style*="display: flex"][style*="justify-content: space-between"],
+    .modal-content div[style*="display: flex"][style*="justify-content: center"] {
+      width: 100% !important;
+      flex-wrap: wrap !important;
+      gap: 8px !important;
+    }
+
+    .modal-content div[style*="justify-content: flex-end"] button,
+    .modal-content div[style*="justify-content: space-between"] button,
+    .modal-content div[style*="justify-content: center"] button {
+      flex: 1 1 auto !important;
+      max-width: 100% !important;
+      min-height: 38px !important;
+      font-size: 12px !important;
+    }
+
+    .dash-chart-canvas-wrapper {
+      height: 200px !important;
+    }
+
+    #dashMetricModalStatBar {
+      gap: 6px !important;
+      padding: 8px !important;
+      font-size: 10.5px !important;
+    }
+
+    /* PENCEGAHAN AUTO-ZOOM PADA APPLE IOS (IPHONE SAFARI / CHROME) */
+    @supports (-webkit-touch-callout: none) {
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        font-size: 16px !important;
+      }
+    }
+  }
+
+  /* ============================================================================
+   * BREAKPOINT KHUSUS SMARTPHONE ULTRA-KOMPAK (LEBAR LAYAR <= 400PX)
+   * iPhone SE, Galaxy A series, dan perangkat layar sempit
+   * ============================================================================ */
+  @media (max-width: 400px) {
+    .app-container {
+      padding: 8px 6px 36px 6px !important;
+    }
+
+    .card {
+      padding: 12px 10px !important;
+      margin-bottom: 10px !important;
+    }
+
+    .topbar {
+      padding: 6px 10px !important;
+    }
+
+    .topbar-logo-container {
+      width: 32px !important;
+      height: 32px !important;
+      min-width: 32px !important;
+      min-height: 32px !important;
+    }
+
+    .brand-title {
+      font-size: 10px !important;
+    }
+
+    .brand-subtitle {
+      font-size: 8px !important;
+    }
+
+    .nav-item {
+      padding: 8px 10px !important;
+      font-size: 10.5px !important;
+    }
+
+    .subnav-pill {
+      padding: 5px 8px !important;
+      font-size: 10px !important;
+    }
+
+    .metric-card {
+      padding: 7px 4px !important;
+      min-height: 52px !important;
+    }
+
+    .metric-value {
+      font-size: 13px !important;
+    }
+
+    .metric-label {
+      font-size: 7.5px !important;
+    }
+  }
+
+  /* ANIMASI & INTERAKSI MODERN TOMBOL TERAPKAN DASHBOARD */
+  #btnApplyDashboardFilter {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    user-select: none;
+    font-weight: 700;
+  }
+
+  #btnApplyDashboardFilter:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    filter: brightness(1.08);
+  }
+
+  #btnApplyDashboardFilter:active {
+    transform: scale(0.95);
+  }
+
+  #btnApplyDashboardFilter.btn-applying {
+    pointer-events: none;
+    opacity: 0.92;
+    background: linear-gradient(135deg, #1d4ed8, #2563eb) !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4), 0 4px 14px rgba(37, 99, 235, 0.35) !important;
+  }
+
+  #btnApplyDashboardFilter.btn-applied-success {
+    background: linear-gradient(135deg, #059669, #10b981) !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4) !important;
+    transform: scale(1.02);
+  }
+
+  @keyframes spinBtnSync {
+    from {
+      transform: rotate(0deg);
+    }
+
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .spin-icon-dash {
+    display: inline-block;
+    animation: spinBtnSync 0.65s linear infinite;
+    transform-origin: center;
+  }
+
+  /* ============================================================================
+   * ISOLASI TOTAL FORMAT CETAK PDF RESMI A4 (ANTI-BERANTAKAN, ANTI-CLIPPING)
+   * ============================================================================ */
+  .pdf-print-template-root,
+  #unitHistoryPrintTemplate,
+  #farDocumentPrintTemplate,
+  #dashboardPrintTemplate,
+  #metricSinglePrintTemplate {
+    box-sizing: border-box !important;
+    width: 720px !important;
+    min-width: 720px !important;
+    max-width: 720px !important;
+    margin: 0 auto !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+    font-size: 10px !important;
+    line-height: 1.35 !important;
+    overflow: visible !important;
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    text-rendering: geometricPrecision !important;
+    image-rendering: -webkit-optimize-contrast !important;
+    letter-spacing: normal !important;
+    transform: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .pdf-print-template-root *,
+  #unitHistoryPrintTemplate *,
+  #farDocumentPrintTemplate *,
+  #dashboardPrintTemplate *,
+  #metricSinglePrintTemplate * {
+    box-sizing: border-box !important;
+  }
+
+  /* KOP HEADER PERUSAHAAN (BERSIH TOTAL DARI BORDER LIAR) */
+  .pdf-print-template-root table.pdf-kop-table,
+  .pdf-print-template-root table.pdf-kop-table tr,
+  .pdf-print-template-root table.pdf-kop-table td {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .pdf-print-template-root td.pdf-kop-left-cell {
+    border: none !important;
+    border-bottom: 2px solid #0f172a !important;
+    padding: 0 10px 8px 0 !important;
+    vertical-align: middle !important;
+    background: transparent !important;
+  }
+
+  .pdf-print-template-root td.pdf-kop-right-cell {
+    border: none !important;
+    border-bottom: 2px solid #0f172a !important;
+    border-left: 1.5px solid #cbd5e1 !important;
+    padding: 0 8px 8px 10px !important;
+    vertical-align: middle !important;
+    text-align: right !important;
+    width: 185px !important;
+    background: transparent !important;
+  }
+
+  /* TABEL DATA STANDAR DEFINISI TINGGI (HIGH DEFINITION & ANTI-BURAM) */
+  .pdf-print-template-root table.pdf-data-table {
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
+    table-layout: fixed !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    border: 1.5px solid #334155 !important;
+    margin-bottom: 8px !important;
+    background: #ffffff !important;
+  }
+
+  .pdf-print-template-root table.pdf-data-table thead tr {
+    background: #1e293b !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .pdf-print-template-root table.pdf-data-table th {
+    padding: 5px 6px !important;
+    font-size: 8.5px !important;
+    font-weight: 800 !important;
+    line-height: 1.25 !important;
+    background: #1e293b !important;
+    color: #ffffff !important;
+    border: 1px solid #334155 !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    white-space: normal !important;
+    text-align: center !important;
+    position: static !important;
+    letter-spacing: 0.3px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .pdf-print-template-root table.pdf-data-table td {
+    padding: 4px 6px !important;
+    line-height: 1.3 !important;
+    font-size: 8.5px !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    white-space: normal !important;
+    vertical-align: middle !important;
+    position: static !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .pdf-print-template-root table.pdf-data-table tbody tr:nth-child(even) {
+    background-color: #f8fafc !important;
+  }
+
+  .pdf-print-template-root table.pdf-data-table tbody tr:nth-child(odd) {
+    background-color: #ffffff !important;
+  }
+
+  /* TABEL LAYOUT & GRID METRIK */
+  .pdf-print-template-root table.pdf-layout-table,
+  .pdf-print-template-root table.pdf-layout-table tr,
+  .pdf-print-template-root table.pdf-layout-table td {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* TABEL IDENTIFIKASI & METRIK KHUSUS (FAR SEKSI I & DASHBOARD KPI) */
+  .pdf-print-template-root table.pdf-grid-table {
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
+    table-layout: fixed !important;
+    width: 100% !important;
+    border: 1.5px solid #475569 !important;
+    margin-bottom: 8px !important;
+    background: #ffffff !important;
+  }
+
+  .pdf-print-template-root table.pdf-grid-table th {
+    padding: 4px 4px !important;
+    font-size: 8px !important;
+    font-weight: 700 !important;
+    line-height: 1.2 !important;
+    background: #f1f5f9 !important;
+    color: #475569 !important;
+    border: 1px solid #cbd5e1 !important;
+    text-align: center !important;
+    white-space: normal !important;
+    position: static !important;
+  }
+
+  .pdf-print-template-root table.pdf-grid-table td {
+    padding: 4px 6px !important;
+    font-size: 8.5px !important;
+    line-height: 1.25 !important;
+    border: 1px solid #cbd5e1 !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    white-space: normal !important;
+    position: static !important;
+    vertical-align: middle !important;
+  }
+
+  .pdf-print-template-root table.pdf-grid-table td.pdf-grid-label {
+    background: #f8fafc !important;
+    font-weight: 700 !important;
+    color: #475569 !important;
+    border-right: 1.2px solid #475569 !important;
+  }
+
+  .pdf-print-template-root table.pdf-grid-table td.pdf-grid-val {
+    background: #ffffff !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+  }
+
+  /* TABEL FOTO BUKTI NATIVE GRID (ANTI-FLEX COLLAPSE) */
+  .pdf-print-template-root table.pdf-photo-table {
+    width: 100% !important;
+    border-collapse: separate !important;
+    border-spacing: 6px 0 !important;
+    table-layout: fixed !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+  }
+
+  .pdf-print-template-root table.pdf-photo-table tr,
+  .pdf-print-template-root table.pdf-photo-table td {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    vertical-align: top !important;
+  }
+
+  /* TABEL TANDA TANGAN FORMAL */
+  .pdf-print-template-root table.far-signature-table {
+    width: 100% !important;
+    border-collapse: separate !important;
+    border-spacing: 12px 0 !important;
+    table-layout: fixed !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+  }
+
+  .pdf-print-template-root table.far-signature-table tr,
+  .pdf-print-template-root table.far-signature-table td {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    vertical-align: top !important;
+    text-align: center !important;
+  }
+
+  /* PENCEGAHAN POTONGAN DI TENGAH BARIS / GAMBAR */
+  .pdf-print-template-root tr,
+  .pdf-print-template-root .far-signature-table,
+  .pdf-print-template-root .pdf-avoid-break,
+  .pdf-print-template-root .pdf-kop-table,
+  .pdf-print-template-root img {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* ==========================================================================
+     FITUR SCROLL PRESISI & FLUID SCROLL CHAINING (ZettBOT Precision Scroll)
+     Jika posisi baris data di tabel berada di paling atas, pengguliran (scroll)
+     meneruskan gerakan untuk menggulir menu/halaman keseluruhan.
+     100% PURE CSS - ZERO SCRIPT MODIFIED
+     ========================================================================== */
+  .table-container,
+  .table-responsive,
+  .table-wrapper,
+  .data-table-container,
+  .table-container-bounded,
+  .table-scroll,
+  .data-table,
+  table,
+  tbody {
+    overscroll-behavior-y: auto !important;
+    /* Teruskan scroll ke menu/halaman saat baris teratas */
+    overscroll-behavior-x: contain !important;
+    /* Mencegah swipe horizontal memicu navigasi browser */
+    scroll-behavior: smooth !important;
+    /* Transisi scroll presisi dan mulus */
+    -webkit-overflow-scrolling: touch !important;
+    /* Momentum sentuh responsif di layar HP */
+    touch-action: pan-x pan-y !important;
+    /* Navigasi sentuh bebas hambatan */
+  }
+
+  /* Penyelarasan kontainer menu induk & area konten */
+  .main-content,
+  .content-area,
+  .tab-content,
+  .tab-pane,
+  .card,
+  .card-body,
+  .menu-section,
+  .page-container {
+    overscroll-behavior-y: auto !important;
+    scroll-behavior: smooth !important;
+  }
+
+  /* Penyelarasan Subnav Pill Group */
+  .subnav-pill-group {
+    overscroll-behavior-y: auto !important;
+    overscroll-behavior-x: contain !important;
+    touch-action: pan-x pan-y !important;
+  }
+</style>

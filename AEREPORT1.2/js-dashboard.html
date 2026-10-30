@@ -1,0 +1,2527 @@
+<script>
+  /**
+   * ============================================================================
+   * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+   * File: js-dashboard.html (KPI Dashboard, Visualisasi Chart.js, & 11 Metrik PDF)
+   * ============================================================================
+   */
+
+  if (typeof parseDateComponents !== 'function') {
+    window.parseDateComponents = function (dateStr) {
+      if (!dateStr) return null;
+      if (dateStr instanceof Date) {
+        if (isNaN(dateStr.getTime())) return null;
+        return { year: dateStr.getFullYear(), month: dateStr.getMonth() + 1, day: dateStr.getDate() };
+      }
+      var str = String(dateStr).trim();
+      if (!str || str === '-' || str === 'undefined' || str === 'null') return null;
+      str = str.replace(/^[a-zA-Z]+,\s*/, '');
+      var monthMap = {
+        'jan': 1, 'januari': 1, 'january': 1,
+        'feb': 2, 'februari': 2, 'february': 2,
+        'mar': 3, 'maret': 3, 'march': 3,
+        'apr': 4, 'april': 4,
+        'mei': 5, 'may': 5,
+        'jun': 6, 'juni': 6, 'june': 6,
+        'jul': 7, 'juli': 7, 'july': 7,
+        'agu': 8, 'agust': 8, 'agustus': 8, 'aug': 8, 'august': 8,
+        'sep': 9, 'sept': 9, 'september': 9,
+        'okt': 10, 'oktober': 10, 'oct': 10, 'october': 10,
+        'nov': 11, 'november': 11,
+        'des': 12, 'desember': 12, 'dec': 12, 'december': 12
+      };
+      var textMonthMatch = str.match(/(\d{1,2})[\s\-_/]+([a-zA-Z]+)[\s\-_/]+(\d{2,4})/);
+      if (textMonthMatch) {
+        var dTxt = parseInt(textMonthMatch[1], 10);
+        var mKey = textMonthMatch[2].toLowerCase();
+        var yTxt = parseInt(textMonthMatch[3], 10);
+        if (yTxt < 100) yTxt = 2000 + yTxt;
+        if (monthMap[mKey]) return { year: yTxt, month: monthMap[mKey], day: dTxt };
+      }
+      var dateOnly = str.split(/[T\s]/)[0];
+      var parts = dateOnly.split(/[-/.]/);
+      if (parts.length >= 3) {
+        var p0 = parseInt(parts[0], 10);
+        var p1 = parseInt(parts[1], 10);
+        var p2 = parseInt(parts[2], 10);
+        if (parts[0].length === 4) return { year: p0, month: p1, day: p2 };
+        if (parts[2].length === 4) return { year: p2, month: p1, day: p0 };
+        if (parts[2].length === 2) return { year: 2000 + p2, month: p1, day: p0 };
+      }
+      var d = new Date(str);
+      if (!isNaN(d.getTime())) return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+      return null;
+    };
+  }
+
+  window.isDateInSelectedPeriod = function (dateStr, targetMonth, targetYear) {
+    if (!dateStr) return false;
+    var parsed = parseDateComponents(dateStr);
+    if (!parsed) return false;
+    var isAllMonth = (targetMonth === 'all' || targetMonth === 'ALL' || targetMonth === '' || targetMonth === null || typeof targetMonth === 'undefined');
+    var isAllYear = (targetYear === 'all' || targetYear === 'ALL' || targetYear === '' || targetYear === null || typeof targetYear === 'undefined');
+    var tM = isAllMonth ? null : parseInt(targetMonth, 10);
+    var tY = isAllYear ? null : parseInt(targetYear, 10);
+    if (!isAllMonth && (isNaN(tM) || tM <= 0)) isAllMonth = true;
+    if (!isAllYear && (isNaN(tY) || tY <= 0)) isAllYear = true;
+    if (!isAllYear && parsed.year !== tY) return false;
+    if (!isAllMonth && parsed.month !== tM) return false;
+    return true;
+  };
+
+  var currentActiveMetricType = 'pa';
+
+  function getChartActiveLabels(chart, defaultLabels) {
+    if (!chart || !chart.data || !chart.data.labels) return (defaultLabels || []).slice();
+    var active = [];
+    for (var i = 0; i < chart.data.labels.length; i++) {
+      var isVis = (typeof chart.getDataVisibility === 'function') ? chart.getDataVisibility(i) : true;
+      if (isVis) {
+        active.push(chart.data.labels[i]);
+      }
+    }
+    return active;
+  }
+
+  function handleChartElementSoloClick(chart, clickedIdx, onUpdateCallback) {
+    if (!chart || !chart.data || !chart.data.labels) return;
+    var total = chart.data.labels.length;
+    var visibleIndices = [];
+    for (var i = 0; i < total; i++) {
+      var isVis = (typeof chart.getDataVisibility === 'function') ? chart.getDataVisibility(i) : true;
+      if (isVis) visibleIndices.push(i);
+    }
+    // Jika hanya elemen clickedIdx yang saat ini aktif -> Reset semua menjadi aktif kembali
+    if (visibleIndices.length === 1 && visibleIndices[0] === clickedIdx) {
+      for (var j = 0; j < total; j++) {
+        if (typeof chart.getDataVisibility === 'function' && !chart.getDataVisibility(j)) {
+          chart.toggleDataVisibility(j);
+        }
+      }
+    } else {
+      // Isolasi hanya elemen clickedIdx (sembunyikan lainnya)
+      for (var k = 0; k < total; k++) {
+        var wantVis = (k === clickedIdx);
+        var curVis = (typeof chart.getDataVisibility === 'function') ? chart.getDataVisibility(k) : true;
+        if (curVis !== wantVis && typeof chart.toggleDataVisibility === 'function') {
+          chart.toggleDataVisibility(k);
+        }
+      }
+    }
+    chart.update();
+    if (typeof onUpdateCallback === 'function') {
+      onUpdateCallback();
+    }
+  }
+
+  function getDashboardSourceReports() {
+    if (window.globalAllWorkReports && Array.isArray(window.globalAllWorkReports) && window.globalAllWorkReports.length > 0) {
+      return window.globalAllWorkReports;
+    }
+    return (typeof allFilteredReports !== 'undefined' && Array.isArray(allFilteredReports) && allFilteredReports.length > 0)
+      ? allFilteredReports
+      : [];
+  }
+  window.getDashboardSourceReports = getDashboardSourceReports;
+
+  function fetchDashboardWorkReports(forceRefresh, callback) {
+    if (!forceRefresh && window.globalAllWorkReports && window.globalAllWorkReports.length > 0) {
+      if (callback) callback(window.globalAllWorkReports);
+      return;
+    }
+    if (typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getWorkReportsPaginated === 'function') {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && res.reports) {
+            window.globalAllWorkReports = res.reports;
+            if (typeof allFilteredReports === 'undefined' || !allFilteredReports || allFilteredReports.length === 0) {
+              allFilteredReports = res.reports;
+            }
+            if (typeof loadDashboardKPI === 'function') {
+              loadDashboardKPI(true);
+            }
+            if (callback) callback(window.globalAllWorkReports);
+          } else {
+            if (callback) callback(getDashboardSourceReports());
+          }
+        })
+        .withFailureHandler(function (err) {
+          console.warn('Gagal memuat seluruh log pekerjaan dashboard:', err);
+          if (callback) callback(getDashboardSourceReports());
+        })
+        .getWorkReportsPaginated(1, 1000, '', '');
+    } else {
+      if (callback) callback(getDashboardSourceReports());
+    }
+  }
+  window.fetchDashboardWorkReports = fetchDashboardWorkReports;
+
+  function fetchAllDashboardData(forceRefresh, callback) {
+    var pending = 0;
+    function checkDone() {
+      pending--;
+      if (pending <= 0) {
+        if (typeof loadDashboardKPI === 'function') {
+          loadDashboardKPI(true);
+        }
+        if (typeof callback === 'function') callback();
+      }
+    }
+
+    // 1. Log Pekerjaan
+    if (forceRefresh || !window.globalAllWorkReports || window.globalAllWorkReports.length === 0) {
+      pending++;
+      fetchDashboardWorkReports(forceRefresh, function () {
+        checkDone();
+      });
+    }
+
+    // 2. Log Baterai
+    if ((forceRefresh || !globalBatteryLogs || globalBatteryLogs.length === 0) && typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getBatteryLogs === 'function') {
+      pending++;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && res.logs) {
+            globalBatteryLogs = res.logs;
+          }
+          checkDone();
+        })
+        .withFailureHandler(function (err) {
+          console.warn('Gagal memuat log baterai untuk dashboard:', err);
+          checkDone();
+        })
+        .getBatteryLogs();
+    }
+
+    // 3. Log PM
+    if ((forceRefresh || !globalPMLogs || globalPMLogs.length === 0) && typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getPMLogs === 'function') {
+      pending++;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && res.logs) {
+            globalPMLogs = res.logs;
+          }
+          checkDone();
+        })
+        .withFailureHandler(function (err) {
+          console.warn('Gagal memuat log PM untuk dashboard:', err);
+          checkDone();
+        })
+        .getPMLogs();
+    }
+
+    // 4. Log Inspeksi
+    if ((forceRefresh || !globalInspectionLogs || globalInspectionLogs.length === 0) && typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getInspectionLogs === 'function') {
+      pending++;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && res.logs) {
+            globalInspectionLogs = res.logs;
+          }
+          checkDone();
+        })
+        .withFailureHandler(function (err) {
+          console.warn('Gagal memuat log inspeksi untuk dashboard:', err);
+          checkDone();
+        })
+        .getInspectionLogs();
+    }
+
+    // 5. Log Breakdown
+    if ((forceRefresh || !globalBreakdownLogs || globalBreakdownLogs.length === 0) && typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getBreakdownLogs === 'function') {
+      pending++;
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && res.logs) {
+            globalBreakdownLogs = res.logs;
+          }
+          checkDone();
+        })
+        .withFailureHandler(function (err) {
+          console.warn('Gagal memuat log breakdown untuk dashboard:', err);
+          checkDone();
+        })
+        .getBreakdownLogs();
+    }
+
+    if (pending === 0) {
+      if (typeof callback === 'function') callback();
+    }
+  }
+  window.fetchAllDashboardData = fetchAllDashboardData;
+
+  function openDashboardMetricModal(metricType) {
+    currentActiveMetricType = metricType;
+    var modal = document.getElementById('dashMetricChartModal');
+    if (!modal) return;
+
+    var selM = document.getElementById('dashMonth') ? document.getElementById('dashMonth').value : String(new Date().getMonth() + 1);
+    var selY = document.getElementById('dashYear') ? document.getElementById('dashYear').value : String(new Date().getFullYear());
+
+    var sourceReports = getDashboardSourceReports();
+
+    // Pastikan seluruh data log pekerjaan termuat lengkap dari server jika belum ada di memori
+    var workReportMetrics = ['total_jobs', 'pa', 'mttr', 'mtbf', 'top_category', 'matrix_system', 'matrix_recurring', 'part_ratio'];
+    if ((!sourceReports || sourceReports.length === 0) && workReportMetrics.indexOf(metricType) !== -1 && typeof fetchDashboardWorkReports === 'function') {
+      var tbodyLoading = document.getElementById('dashMetricTableTbody');
+      if (tbodyLoading) {
+        tbodyLoading.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:35px; color:#64748b; font-size:13px;"><svg class="spin-icon-dash" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle; margin-right:8px;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Sedang mengambil seluruh data riwayat pekerjaan periode terpilih...</td></tr>';
+      }
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+      fetchDashboardWorkReports(false, function () {
+        openDashboardMetricModal(metricType);
+      });
+      return;
+    }
+
+    var periodReports = sourceReports.filter(function (r) {
+      return isDateInSelectedPeriod(r.tanggal || r.timestamp, selM, selY);
+    });
+    if (typeof sortListByDateDescending === 'function') {
+      periodReports = sortListByDateDescending(periodReports, 'tanggal');
+    }
+
+    var isAllM = (selM === 'all' || selM === 'ALL' || !selM);
+    var isAllY = (selY === 'all' || selY === 'ALL' || !selY);
+    var monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    var mInt = parseInt(selM, 10);
+    var mText = (!isAllM && mInt >= 1 && mInt <= 12) ? monthNames[mInt - 1] : 'Semua Bulan';
+    var periodLabel = (isAllM && isAllY)
+      ? 'Seluruh Periode (Kumulatif)'
+      : (isAllM ? ('Semua Bulan ' + selY) : (isAllY ? (mText + ' (Semua Tahun)') : (mText + ' ' + selY)));
+
+    var titleEl = document.getElementById('dashMetricModalTitle');
+    var subEl = document.getElementById('dashMetricModalSubtitle');
+    var badgeEl = document.getElementById('dashMetricModalBadge');
+    var statBar = document.getElementById('dashMetricModalStatBar');
+    var headingEl = document.getElementById('dashMetricChartHeading');
+    var subnoteEl = document.getElementById('dashMetricChartSubnote');
+    var tblHeading = document.getElementById('dashMetricTableHeading');
+    var thead = document.getElementById('dashMetricTableThead');
+    var tbody = document.getElementById('dashMetricTableTbody');
+
+    if (dashMetricChartInstance) {
+      dashMetricChartInstance.destroy();
+      dashMetricChartInstance = null;
+    }
+
+    var chartConfig = null;
+
+    if (metricType === 'pa') {
+      titleEl.textContent = 'PHYSICAL AVAILABILITY (PA)';
+      subEl.textContent = 'Tingkat kesiapan mekanikal armada tambang beroperasi normal di Site Konawe (' + periodLabel + ')';
+      badgeEl.textContent = 'TARGET: ≥ 90.0%';
+      headingEl.textContent = 'TREN AVAILABILITY PER MODEL ARMADA';
+      subnoteEl.textContent = 'Persentase PA dihitung dari Total Jam Operasi terhadap Downtime Elektrikal (Klik batang grafik untuk memfilter)';
+      tblHeading.textContent = 'MATRIKS KESIAPAN UNIT PER MODEL / KLASIFIKASI';
+
+      var totalDt = periodReports.reduce(function (acc, r) { return acc + (parseFloat(r.downtimeJam) || 0); }, 0);
+      var unitCount = (globalUnits && globalUnits.length > 0) ? globalUnits.length : 10;
+      var totalOpHours = unitCount * 30 * 24;
+      var paRaw = totalOpHours > 0 ? (((totalOpHours - totalDt) / totalOpHours) * 100) : 100;
+      if (paRaw < 0) paRaw = 0;
+      if (paRaw > 100) paRaw = 100;
+      var paVal = (paRaw % 1 === 0 || paRaw >= 100) ? Math.round(paRaw).toString() : parseFloat(paRaw.toFixed(1)).toString();
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Akumulasi PA: <strong style="color: #34d399; font-size:14px;">' + paVal + '%</strong></div>' +
+        '<div class="dash-stat-pill">Total Unit Terdaftar: <strong>' + unitCount + ' Unit</strong></div>' +
+        '<div class="dash-stat-pill">Total Downtime Elektrikal: <strong>' + totalDt.toFixed(1) + ' Jam</strong></div>';
+
+      var modelMap = {};
+      globalUnits.forEach(function (u) {
+        var m = u.model || 'LAINNYA';
+        if (!modelMap[m]) modelMap[m] = { count: 0, dt: 0, reports: 0 };
+        modelMap[m].count++;
+      });
+      periodReports.forEach(function (r) {
+        var uObj = globalUnits.find(function (x) { return x.noUnit === r.noUnit; });
+        var m = (uObj && uObj.model) ? uObj.model : (r.modelUnit || 'LAINNYA');
+        if (!modelMap[m]) modelMap[m] = { count: 1, dt: 0, reports: 0 };
+        modelMap[m].dt += (parseFloat(r.downtimeJam) || 0);
+        modelMap[m].reports++;
+      });
+
+      var labels = Object.keys(modelMap);
+      var dataPA = labels.map(function (lbl) {
+        var itm = modelMap[lbl];
+        var opH = itm.count * 30 * 24;
+        var p = opH > 0 ? (((opH - itm.dt) / opH) * 100).toFixed(1) : 100;
+        return parseFloat(p);
+      });
+
+      var activeModelFilterPA = null;
+
+      function renderPAFilteredTable() {
+        var filteredLabels = labels;
+        if (activeModelFilterPA) {
+          filteredLabels = labels.filter(function (lbl) { return lbl === activeModelFilterPA; });
+          tblHeading.innerHTML = 'MATRIKS KESIAPAN MODEL TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(activeModelFilterPA) + '</strong> <button type="button" onclick="window._resetPAFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'MATRIKS KESIAPAN UNIT PER MODEL / KLASIFIKASI (' + labels.length + ' Model)';
+        }
+        var rowsHtml = '';
+        filteredLabels.forEach(function (lbl, idx) {
+          var itm = modelMap[lbl];
+          var opH = itm.count * 30 * 24;
+          var pRaw = opH > 0 ? (((opH - itm.dt) / opH) * 100) : 100;
+          if (pRaw < 0) pRaw = 0;
+          if (pRaw > 100) pRaw = 100;
+          var p = (pRaw % 1 === 0 || pRaw >= 100) ? Math.round(pRaw).toString() : parseFloat(pRaw.toFixed(1)).toString();
+          var statusPill = pRaw >= 90
+            ? '<span class="dash-status-pill-rfu">PRIME (≥90%)</span>'
+            : '<span class="dash-status-pill-waiting">UNDER TARGET</span>';
+          rowsHtml += '<tr><td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td><td><strong style="color:#0f172a; font-weight:800;">' + escapeHtml(lbl) + '</strong></td><td style="text-align:center; font-weight:600;">' + itm.count + ' Unit</td><td style="text-align:center; font-weight:600;">' + itm.reports + ' Kali</td><td style="text-align:center; font-weight:800; color:#0f172a;">' + itm.dt.toFixed(1) + ' Jam</td><td style="text-align:center; font-weight:800; color:#059669;">' + p + '%</td><td style="text-align:center;">' + statusPill + '</td></tr>';
+        });
+        tbody.innerHTML = rowsHtml;
+      }
+
+      window._resetPAFilter = function () {
+        activeModelFilterPA = null;
+        renderPAFilteredTable();
+      };
+
+      chartConfig = {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Physical Availability (%)',
+            data: dataPA,
+            backgroundColor: 'rgba(16, 185, 129, 0.75)',
+            borderColor: '#10b981',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: function (evt, elements) {
+            if (elements && elements.length > 0) {
+              var clickedIdx = elements[0].index;
+              var targetModel = labels[clickedIdx];
+              activeModelFilterPA = (activeModelFilterPA === targetModel) ? null : targetModel;
+              renderPAFilteredTable();
+            }
+          },
+          scales: {
+            y: { min: 50, max: 100, ticks: { color: '#334155', font: { weight: '600', size: 11 } }, grid: { color: 'rgba(0,0,0,0.06)' } },
+            x: { ticks: { color: '#0f172a', font: { weight: '700', size: 10.5 }, maxRotation: 45, minRotation: 45, autoSkip: false }, grid: { display: false } }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr><th style="width:45px; text-align:center;">NO</th><th>MODEL ARMADA</th><th style="text-align:center;">POPULASI</th><th style="text-align:center;">KASUS</th><th style="text-align:center;">DOWNTIME</th><th style="text-align:center;">PHYSICAL AVAILABILITY</th><th style="text-align:center;">STATUS</th></tr>';
+      renderPAFilteredTable();
+
+    } else if (metricType === 'mttr') {
+      titleEl.textContent = 'MEAN TIME TO REPAIR (MTTR)';
+      subEl.textContent = 'Efisiensi dan kecepatan durasi penanganan kerusakan sistem elektrikal (' + periodLabel + ')';
+      badgeEl.textContent = 'WAKTU REPARASI';
+      headingEl.textContent = 'DURASI RATA-RATA REPARASI PER KATEGORI (JAM)';
+      subnoteEl.textContent = 'MTTR = Total Downtime Dibagi Jumlah Kasus Pekerjaan (Klik batang grafik untuk memfilter)';
+      tblHeading.textContent = 'MATRIKS DURASI PERBAIKAN PER KATEGORI KERUSAKAN';
+
+      var catMap = {};
+      periodReports.forEach(function (r) {
+        var c = (typeof normalizeCategoryName === 'function')
+          ? normalizeCategoryName(r.kategoriPekerjaan)
+          : String(r.kategoriPekerjaan || 'LAIN-LAIN').trim().toUpperCase();
+        if (!catMap[c]) catMap[c] = { cases: 0, dt: 0 };
+        catMap[c].cases++;
+        catMap[c].dt += (parseFloat(r.downtimeJam) || 0);
+      });
+
+      var totalCases = periodReports.length;
+      var totalDtAll = periodReports.reduce(function (acc, r) { return acc + (parseFloat(r.downtimeJam) || 0); }, 0);
+      var avgMttr = totalCases > 0 ? (totalDtAll / totalCases).toFixed(1) : '0.0';
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Rata-Rata MTTR: <strong style="color: var(--accent-orange); font-size:14px;">' + avgMttr + ' Jam</strong></div>' +
+        '<div class="dash-stat-pill">Total Intervensi: <strong>' + totalCases + ' Pekerjaan</strong></div>' +
+        '<div class="dash-stat-pill">Akumulasi Downtime: <strong>' + totalDtAll.toFixed(1) + ' Jam</strong></div>';
+
+      var labels = Object.keys(catMap);
+      var dataMttr = labels.map(function (k) {
+        var itm = catMap[k];
+        return itm.cases > 0 ? parseFloat((itm.dt / itm.cases).toFixed(1)) : 0;
+      });
+
+      var activeCatFilterMTTR = null;
+
+      function renderMTTRFilteredTable() {
+        var filteredLabels = labels;
+        if (activeCatFilterMTTR) {
+          filteredLabels = labels.filter(function (k) { return k === activeCatFilterMTTR; });
+          tblHeading.innerHTML = 'MATRIKS DURASI TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(activeCatFilterMTTR) + '</strong> <button type="button" onclick="window._resetMTTRFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'MATRIKS DURASI PERBAIKAN PER KATEGORI KERUSAKAN (' + labels.length + ' Kategori)';
+        }
+        var rowsHtml = '';
+        filteredLabels.forEach(function (k, idx) {
+          var itm = catMap[k];
+          var m = itm.cases > 0 ? (itm.dt / itm.cases).toFixed(1) : '0.0';
+          var evalPill = parseFloat(m) <= 2.5
+            ? '<span class="dash-status-pill-rfu">CEPAT (≤2.5 Jam)</span>'
+            : '<span class="dash-status-pill-waiting">LAMBAT (>2.5 Jam)</span>';
+          rowsHtml += '<tr><td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td><td><strong style="color:#0f172a; font-weight:800;">' + escapeHtml(k) + '</strong></td><td style="text-align:center; font-weight:600;">' + itm.cases + ' Kasus</td><td style="text-align:center; font-weight:800; color:#0f172a;">' + itm.dt.toFixed(1) + ' Jam</td><td style="text-align:center; font-weight:800; color:#d97706;">' + m + ' Jam</td><td style="text-align:center;">' + evalPill + '</td></tr>';
+        });
+        tbody.innerHTML = rowsHtml || '<tr><td colspan="6" style="text-align:center; padding:20px; color:#64748b;">Belum ada data pekerjaan di periode ini.</td></tr>';
+      }
+
+      window._resetMTTRFilter = function () {
+        activeCatFilterMTTR = null;
+        renderMTTRFilteredTable();
+      };
+
+      chartConfig = {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'MTTR (Jam)',
+            data: dataMttr,
+            backgroundColor: 'rgba(245, 158, 11, 0.75)',
+            borderColor: '#f59e0b',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: function (evt, elements) {
+            if (elements && elements.length > 0) {
+              var clickedIdx = elements[0].index;
+              var targetCat = labels[clickedIdx];
+              activeCatFilterMTTR = (activeCatFilterMTTR === targetCat) ? null : targetCat;
+              renderMTTRFilteredTable();
+            }
+          },
+          scales: {
+            y: { ticks: { color: '#334155', font: { weight: '600', size: 11 } }, grid: { color: 'rgba(0,0,0,0.06)' } },
+            x: { ticks: { color: '#0f172a', font: { weight: '700', size: 11 }, maxRotation: 45, minRotation: 20 }, grid: { display: false } }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr><th style="width:45px; text-align:center;">NO</th><th>KATEGORI SISTEM</th><th style="text-align:center;">JUMLAH KASUS</th><th style="text-align:center;">TOTAL DOWNTIME</th><th style="text-align:center;">MTTR RATA-RATA</th><th style="text-align:center;">STATUS EVALUASI</th></tr>';
+      renderMTTRFilteredTable();
+
+    } else if (metricType === 'mtbf') {
+      titleEl.textContent = 'MEAN TIME BETWEEN FAILURES (MTBF)';
+      subEl.textContent = 'Tingkat keandalan interval operasi unit antar-kejadian kerusakan elektrikal (' + periodLabel + ')';
+      badgeEl.textContent = 'KEANDALAN SISTEM';
+      headingEl.textContent = 'INTERVAL OPERASI ANTAR KERUSAKAN PER MODEL ARMADA';
+      subnoteEl.textContent = 'MTBF = Jam Operasi Bersih Dibagi Jumlah Kerusakan (Klik batang grafik untuk memfilter)';
+      tblHeading.textContent = 'MATRIKS KEANDALAN MTBF PER POPULASI ARMADA';
+
+      var totalUnits = (globalUnits && globalUnits.length > 0) ? globalUnits.length : 10;
+      var totalOpH = totalUnits * 30 * 24;
+      var totalBreakdowns = periodReports.length;
+      var totalDt = periodReports.reduce(function (acc, r) { return acc + (parseFloat(r.downtimeJam) || 0); }, 0);
+      var globalMtbf = totalBreakdowns > 0 ? Math.round((totalOpH - totalDt) / totalBreakdowns) : totalOpH;
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Rata-Rata MTBF: <strong style="color: #38bdf8; font-size:14px;">' + globalMtbf + ' Jam</strong></div>' +
+        '<div class="dash-stat-pill">Total Armada Operasi: <strong>' + totalUnits + ' Unit</strong></div>' +
+        '<div class="dash-stat-pill">Frekuensi Breakdown: <strong>' + totalBreakdowns + ' Kasus</strong></div>';
+
+      var modelMap = {};
+      globalUnits.forEach(function (u) {
+        var m = u.model || 'LAINNYA';
+        if (!modelMap[m]) modelMap[m] = { count: 0, dt: 0, failures: 0 };
+        modelMap[m].count++;
+      });
+      periodReports.forEach(function (r) {
+        var uObj = globalUnits.find(function (x) { return x.noUnit === r.noUnit; });
+        var m = (uObj && uObj.model) ? uObj.model : (r.modelUnit || 'LAINNYA');
+        if (!modelMap[m]) modelMap[m] = { count: 1, dt: 0, failures: 0 };
+        modelMap[m].dt += (parseFloat(r.downtimeJam) || 0);
+        modelMap[m].failures++;
+      });
+
+      var labels = Object.keys(modelMap);
+      var dataMtbf = labels.map(function (k) {
+        var itm = modelMap[k];
+        var op = itm.count * 30 * 24;
+        return itm.failures > 0 ? Math.round((op - itm.dt) / itm.failures) : op;
+      });
+
+      var activeModelFilterMTBF = null;
+
+      function renderMTBFFilteredTable() {
+        var filteredLabels = labels;
+        if (activeModelFilterMTBF) {
+          filteredLabels = labels.filter(function (lbl) { return lbl === activeModelFilterMTBF; });
+          tblHeading.innerHTML = 'MATRIKS KEANDALAN MODEL TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(activeModelFilterMTBF) + '</strong> <button type="button" onclick="window._resetMTBFFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'MATRIKS KEANDALAN MTBF PER POPULASI ARMADA (' + labels.length + ' Model)';
+        }
+        var rowsHtml = '';
+        filteredLabels.forEach(function (k, idx) {
+          var itm = modelMap[k];
+          var op = (itm.count * 30 * 24) - itm.dt;
+          var val = itm.failures > 0 ? Math.round(op / itm.failures) : Math.round(op);
+          var pill = val >= 300
+            ? '<span class="dash-status-pill-rfu">RELIABLE (≥300 Jam)</span>'
+            : '<span class="dash-status-pill-continue">MONITORING (<300 Jam)</span>';
+          rowsHtml += '<tr><td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td><td><strong style="color:#0f172a; font-weight:800;">' + escapeHtml(k) + '</strong></td><td style="text-align:center; font-weight:600;">' + itm.count + ' Unit</td><td style="text-align:center; font-weight:600;">' + itm.failures + ' Kali</td><td style="text-align:center; font-weight:600;">' + op.toFixed(1) + ' Jam</td><td style="text-align:center; font-weight:800; color:#0284c7;">' + val + ' Jam</td><td style="text-align:center;">' + pill + '</td></tr>';
+        });
+        tbody.innerHTML = rowsHtml;
+      }
+
+      window._resetMTBFFilter = function () {
+        activeModelFilterMTBF = null;
+        renderMTBFFilteredTable();
+      };
+
+      chartConfig = {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'MTBF (Jam Kerja Antar Kasus)',
+            data: dataMtbf,
+            backgroundColor: 'rgba(56, 189, 248, 0.75)',
+            borderColor: '#38bdf8',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: function (evt, elements) {
+            if (elements && elements.length > 0) {
+              var clickedIdx = elements[0].index;
+              var targetModel = labels[clickedIdx];
+              activeModelFilterMTBF = (activeModelFilterMTBF === targetModel) ? null : targetModel;
+              renderMTBFFilteredTable();
+            }
+          },
+          scales: {
+            y: { ticks: { color: '#334155', font: { weight: '600', size: 11 } }, grid: { color: 'rgba(0,0,0,0.06)' } },
+            x: { ticks: { color: '#0f172a', font: { weight: '700', size: 10.5 }, maxRotation: 45, minRotation: 45, autoSkip: false }, grid: { display: false } }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr><th style="width:45px; text-align:center;">NO</th><th>MODEL ARMADA</th><th style="text-align:center;">POPULASI</th><th style="text-align:center;">JUMLAH KASUS</th><th style="text-align:center;">JAM OPERASI BERSIH</th><th style="text-align:center;">MTBF (JAM)</th><th style="text-align:center;">STATUS KEANDALAN</th></tr>';
+      renderMTBFFilteredTable();
+
+    } else if (metricType === 'total_jobs') {
+      titleEl.textContent = 'LOG PEKERJAAN';
+      subEl.textContent = 'Distribusi seluruh aktivitas intervensi perbaikan & perawatan unit (' + periodLabel + ')';
+      badgeEl.textContent = periodReports.length + ' LOG PEKERJAAN';
+      headingEl.textContent = 'DISTRIBUSI STATUS UNIT PEKERJAAN';
+      subnoteEl.textContent = 'Klik legenda (coret) atau klik irisan donat untuk menyaring tabel: RFU, Continue, atau Waiting Part';
+      tblHeading.textContent = 'DAFTAR DETAIL SELURUH PEKERJAAN TERDATA';
+
+      var defaultJobLabels = ['RFU (Ready)', 'CONTINUE', 'WAITING PART'];
+
+      function getJobStatusCategory(st) {
+        var s = String(st || 'RFU').toUpperCase().trim();
+        if (s === 'CONTINUE') return 'CONTINUE';
+        if (s.indexOf('WAITING') !== -1 || s.indexOf('BREAKDOWN') !== -1) return 'WAITING PART';
+        return 'RFU (Ready)';
+      }
+
+      var rfuCount = 0;
+      var continueCount = 0;
+      var waitingPartCount = 0;
+
+      periodReports.forEach(function (r) {
+        var cat = getJobStatusCategory(r.status);
+        if (cat === 'CONTINUE') {
+          continueCount++;
+        } else if (cat === 'WAITING PART') {
+          waitingPartCount++;
+        } else {
+          rfuCount++;
+        }
+      });
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Total Log: <strong>' + periodReports.length + ' Pekerjaan</strong></div>' +
+        '<div class="dash-stat-pill">Status RFU: <strong style="color: #34d399;">' + rfuCount + ' Unit</strong></div>' +
+        '<div class="dash-stat-pill">Status CONTINUE: <strong style="color: #fbbf24;">' + continueCount + ' Unit</strong></div>' +
+        '<div class="dash-stat-pill">WAITING PART: <strong style="color: #f87171;">' + waitingPartCount + ' Unit</strong></div>';
+
+      function renderTotalJobsFilteredTable() {
+        var activeLabels = getChartActiveLabels(dashMetricChartInstance, defaultJobLabels);
+        var filteredReports = periodReports.filter(function (r) {
+          return activeLabels.indexOf(getJobStatusCategory(r.status)) !== -1;
+        });
+
+        if (activeLabels.length === defaultJobLabels.length) {
+          tblHeading.textContent = 'DAFTAR DETAIL SELURUH PEKERJAAN TERDATA (' + filteredReports.length + ' Pekerjaan)';
+        } else if (activeLabels.length > 0) {
+          tblHeading.innerHTML = 'DAFTAR DETAIL PEKERJAAN TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(activeLabels.join(', ')) + '</strong> (' + filteredReports.length + ' Kasus) <button type="button" onclick="window._resetTotalJobsFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'DAFTAR DETAIL PEKERJAAN (0 Kasus - Seluruh Kategori Dinonaktifkan)';
+        }
+
+        var rowsHtml = '';
+        filteredReports.forEach(function (r, idx) {
+          var sPill = '';
+          var cat = getJobStatusCategory(r.status);
+          if (cat === 'CONTINUE') {
+            sPill = '<span class="dash-status-pill-continue">CONTINUE</span>';
+          } else if (cat === 'WAITING PART') {
+            sPill = '<span class="dash-status-pill-waiting">WAITING PART</span>';
+          } else {
+            sPill = '<span class="dash-status-pill-rfu">RFU</span>';
+          }
+          var safeCat = escapeHtml((typeof normalizeCategoryName === 'function') ? normalizeCategoryName(r.kategoriPekerjaan) : (r.kategoriPekerjaan || '-'));
+          rowsHtml += '<tr><td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td><td>' + escapeHtml(r.tanggal ? formatDateDDMMYYYY(r.tanggal) : '-') + '</td><td><strong style="color:#0f172a; font-weight:800;">' + escapeHtml(r.noUnit) + '</strong></td><td>' + escapeHtml(r.shift || '-') + '</td><td>' + safeCat + '</td><td>' + escapeHtml(r.namaMekanik || '-') + '</td><td style="text-align:center; font-weight:800; color:#0f172a;">' + (r.downtimeJam || '0') + ' Jam</td><td style="text-align:center;">' + sPill + '</td></tr>';
+        });
+        tbody.innerHTML = rowsHtml || '<tr><td colspan="8" style="text-align:center; padding:20px; color:#64748b;">Tidak ada data pekerjaan yang sesuai dengan filter status yang dipilih pada grafik.</td></tr>';
+      }
+
+      window._resetTotalJobsFilter = function () {
+        if (dashMetricChartInstance) {
+          for (var j = 0; j < defaultJobLabels.length; j++) {
+            if (typeof dashMetricChartInstance.getDataVisibility === 'function' && !dashMetricChartInstance.getDataVisibility(j)) {
+              dashMetricChartInstance.toggleDataVisibility(j);
+            }
+          }
+          dashMetricChartInstance.update();
+        }
+        renderTotalJobsFilteredTable();
+      };
+
+      var isJobEmpty = (rfuCount === 0 && continueCount === 0 && waitingPartCount === 0);
+
+      chartConfig = {
+        type: 'doughnut',
+        data: {
+          labels: isJobEmpty ? ['Nihil Pekerjaan Periode Ini'] : defaultJobLabels,
+          datasets: [{
+            data: isJobEmpty ? [1] : [rfuCount, continueCount, waitingPartCount],
+            backgroundColor: isJobEmpty ? ['rgba(148, 163, 184, 0.35)'] : ['rgba(16, 185, 129, 0.85)', 'rgba(245, 158, 11, 0.85)', 'rgba(239, 68, 68, 0.85)'],
+            borderColor: isJobEmpty ? ['#94a3b8'] : ['#10b981', '#f59e0b', '#ef4444'],
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#0f172a', font: { weight: '700', size: 11.5 } },
+              onClick: function (evt, legendItem, legend) {
+                var ci = legend.chart;
+                ci.toggleDataVisibility(legendItem.index);
+                ci.update();
+                renderTotalJobsFilteredTable();
+              }
+            }
+          },
+          onClick: function (evt, elements, chart) {
+            if (elements && elements.length > 0) {
+              handleChartElementSoloClick(chart, elements[0].index, renderTotalJobsFilteredTable);
+            }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr><th style="width:45px; text-align:center;">NO</th><th>TANGGAL</th><th>NO UNIT</th><th>SHIFT</th><th>KATEGORI SISTEM</th><th>MEKANIK</th><th style="text-align:center;">DOWNTIME</th><th style="text-align:center;">STATUS UNIT</th></tr>';
+      renderTotalJobsFilteredTable();
+
+    } else if (metricType === 'battery') {
+      titleEl.textContent = 'LOG MONITORING BATERAI & ACCU';
+      subEl.textContent = 'Kondisi tegangan sel, resistansi dalam (IR), CCA, dan status kesehatan aki unit (' + periodLabel + ')';
+
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        if (!globalBatteryLogs || globalBatteryLogs.length === 0) {
+          if (typeof getInitialBatteryLogsFallback === 'function') {
+            globalBatteryLogs = getInitialBatteryLogsFallback();
+          }
+        }
+      }
+
+      var periodBatteryLogs = (globalBatteryLogs || []).filter(function (b) {
+        return isDateInSelectedPeriod(b.tanggal, selM, selY);
+      });
+      if (typeof sortListByDateDescending === 'function') {
+        periodBatteryLogs = sortListByDateDescending(periodBatteryLogs, 'tanggal');
+      }
+
+      badgeEl.textContent = periodBatteryLogs.length + ' LOG AKI (' + periodLabel + ')';
+      headingEl.textContent = 'DISTRIBUSI KONDISI KELAYAKAN BATERAI';
+      subnoteEl.textContent = 'Klik legenda (coret) atau irisan donat untuk menyaring kondisi kelayakan aki (Layak, Recharge, Ganti Baru)';
+      tblHeading.textContent = 'MATRIKS HASIL PENGUJIAN KESEHATAN BATERAI UNIT';
+
+      var defaultBatteryLabels = ['Masih Layak', 'Recharge Ulang', 'Ganti Baterai Baru'];
+
+      function getBatteryConditionCategory(b) {
+        var st = String(b.statusGanti || '').toUpperCase();
+        if (st.indexOf('GANTI') !== -1) return 'Ganti Baterai Baru';
+        if (st.indexOf('RECHARGE') !== -1) return 'Recharge Ulang';
+        return 'Masih Layak';
+      }
+
+      var goodCount = 0, chargeCount = 0, replaceCount = 0;
+      periodBatteryLogs.forEach(function (b) {
+        var cat = getBatteryConditionCategory(b);
+        if (cat === 'Ganti Baterai Baru') replaceCount++;
+        else if (cat === 'Recharge Ulang') chargeCount++;
+        else goodCount++;
+      });
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Total Log Baterai: <strong>' + periodBatteryLogs.length + ' Unit</strong></div>' +
+        '<div class="dash-stat-pill">Kondisi Layak: <strong style="color:#34d399;">' + goodCount + ' Unit</strong></div>' +
+        '<div class="dash-stat-pill">Perlu Charge: <strong style="color:#fbbf24;">' + chargeCount + ' Unit</strong></div>' +
+        '<div class="dash-stat-pill">Ganti Baru: <strong style="color:#f87171;">' + replaceCount + ' Unit</strong></div>';
+
+      var isBatEmpty = (goodCount === 0 && chargeCount === 0 && replaceCount === 0);
+
+      function renderBatteryFilteredTable() {
+        if (isBatEmpty) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:25px; color:#64748b; font-size:12.5px;">Nihil: Belum ada log pengujian baterai pada periode ' + escapeHtml(periodLabel) + '.</td></tr>';
+          return;
+        }
+        var activeLabels = getChartActiveLabels(dashMetricChartInstance, defaultBatteryLabels);
+        var filteredLogs = periodBatteryLogs.filter(function (b) {
+          return activeLabels.indexOf(getBatteryConditionCategory(b)) !== -1;
+        });
+
+        if (activeLabels.length === defaultBatteryLabels.length) {
+          tblHeading.textContent = 'MATRIKS HASIL PENGUJIAN KESEHATAN BATERAI UNIT (' + filteredLogs.length + ' Unit)';
+        } else if (activeLabels.length > 0) {
+          tblHeading.innerHTML = 'MATRIKS BATERAI TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(activeLabels.join(', ')) + '</strong> (' + filteredLogs.length + ' Unit) <button type="button" onclick="window._resetBatteryFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'MATRIKS HASIL PENGUJIAN BATERAI (0 Unit - Filter Nonaktif)';
+        }
+
+        var rowsHtml = '';
+        filteredLogs.forEach(function (b, idx) {
+          var vNum = parseFloat(b.voltase) || 0;
+          var vColor = vNum >= 25.0 ? '#059669' : (vNum >= 24.0 ? '#d97706' : '#dc2626');
+          var cat = getBatteryConditionCategory(b);
+          var batPill = '';
+          if (cat === 'Ganti Baterai Baru') {
+            batPill = '<span class="dash-status-pill-waiting">GANTI BARU</span>';
+          } else if (cat === 'Recharge Ulang') {
+            batPill = '<span class="dash-status-pill-continue">RECHARGE</span>';
+          } else {
+            batPill = '<span class="dash-status-pill-rfu">MASIH LAYAK</span>';
+          }
+          rowsHtml += '<tr><td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td><td>' + escapeHtml(b.tanggal ? formatDateDDMMYYYY(b.tanggal) : '-') + '</td><td><strong style="color:#0f172a; font-weight:800;">' + escapeHtml(b.noUnit) + '</strong></td><td>' + escapeHtml(b.merkBaterai || '-') + '</td><td style="text-align:center; font-weight:800; color:' + vColor + ';">' + (b.voltase ? (b.voltase + ' V') : '-') + '</td><td style="text-align:center; font-weight:600;">' + (b.cca || '-') + '</td><td style="text-align:center;">' + escapeHtml(b.kondisiFisik || '-') + '</td><td style="text-align:center;">' + batPill + '</td><td>' + escapeHtml(b.mekanik || '-') + '</td></tr>';
+        });
+        tbody.innerHTML = rowsHtml || '<tr><td colspan="9" style="text-align:center; padding:20px; color:#64748b;">Tidak ada data pengujian baterai yang sesuai dengan filter grafik yang dipilih.</td></tr>';
+      }
+
+      window._resetBatteryFilter = function () {
+        if (dashMetricChartInstance) {
+          for (var j = 0; j < defaultBatteryLabels.length; j++) {
+            if (typeof dashMetricChartInstance.getDataVisibility === 'function' && !dashMetricChartInstance.getDataVisibility(j)) {
+              dashMetricChartInstance.toggleDataVisibility(j);
+            }
+          }
+          dashMetricChartInstance.update();
+        }
+        renderBatteryFilteredTable();
+      };
+
+      chartConfig = {
+        type: 'doughnut',
+        data: {
+          labels: isBatEmpty ? ['Nihil Data Periode Ini'] : defaultBatteryLabels,
+          datasets: [{
+            data: isBatEmpty ? [1] : [goodCount, chargeCount, replaceCount],
+            backgroundColor: isBatEmpty ? ['rgba(148, 163, 184, 0.3)'] : ['rgba(16, 185, 129, 0.8)', 'rgba(251, 191, 36, 0.8)', 'rgba(239, 68, 68, 0.8)'],
+            borderColor: isBatEmpty ? ['#94a3b8'] : ['#10b981', '#fbbf24', '#ef4444'],
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#0f172a', font: { weight: '700', size: 11.5 } },
+              onClick: function (evt, legendItem, legend) {
+                var ci = legend.chart;
+                ci.toggleDataVisibility(legendItem.index);
+                ci.update();
+                renderBatteryFilteredTable();
+              }
+            }
+          },
+          onClick: function (evt, elements, chart) {
+            if (elements && elements.length > 0) {
+              handleChartElementSoloClick(chart, elements[0].index, renderBatteryFilteredTable);
+            }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr><th style="width:45px; text-align:center;">NO</th><th>TANGGAL</th><th>NO UNIT</th><th>MERK & TIPE</th><th style="text-align:center;">VOLTASE</th><th style="text-align:center;">CCA</th><th style="text-align:center;">KONDISI FISIK</th><th style="text-align:center;">STATUS / REKOMENDASI</th><th>MEKANIK</th></tr>';
+      renderBatteryFilteredTable();
+
+    } else if (metricType === 'pm') {
+      titleEl.textContent = 'LOG PREVENTIVE MAINTENANCE (PM)';
+      subEl.textContent = 'Aktivitas service berkala kelistrikan per interval HM (PM1/250, PM2/500, PM3/1000, PM4/2000 Jam) (' + periodLabel + ')';
+
+      if (!globalPMLogs) globalPMLogs = [];
+
+      var periodPMLogs = (globalPMLogs || []).filter(function (p) {
+        return isDateInSelectedPeriod(p.tanggal, selM, selY);
+      });
+      if (typeof sortListByDateDescending === 'function') {
+        periodPMLogs = sortListByDateDescending(periodPMLogs, 'tanggal');
+      }
+
+      badgeEl.textContent = periodPMLogs.length + ' SERVIS PM (' + periodLabel + ')';
+      headingEl.textContent = 'DISTRIBUSI PELAKSANAAN BERDASARKAN LEVEL PM';
+      subnoteEl.textContent = 'Klik batang grafik (PM1/PM2/PM3/PM4) untuk menyaring riwayat servis pada tabel di bawah';
+      tblHeading.textContent = 'MATRIKS DOKUMENTASI PELAKSANAAN PREVENTIVE MAINTENANCE';
+
+      var getNormPM = function (lvl) {
+        if (typeof normalizePMLevel === 'function') return normalizePMLevel(lvl);
+        var s = String(lvl || '').toUpperCase().replace(/\s+/g, '');
+        if (s === 'PM1' || s === 'PM250') return 'PM1';
+        if (s === 'PM2' || s === 'PM500') return 'PM2';
+        if (s === 'PM3' || s === 'PM1000') return 'PM3';
+        if (s === 'PM4' || s === 'PM2000') return 'PM4';
+        return 'PM1';
+      };
+
+      var pmLevelCount = { 'PM1': 0, 'PM2': 0, 'PM3': 0, 'PM4': 0 };
+      periodPMLogs.forEach(function (p) {
+        var norm = getNormPM(p.pmLevel);
+        if (pmLevelCount.hasOwnProperty(norm)) pmLevelCount[norm]++;
+        else pmLevelCount['PM1']++;
+      });
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Total Servis PM: <strong>' + periodPMLogs.length + ' Log</strong></div>' +
+        '<div class="dash-stat-pill">PM1: <strong style="color:#38bdf8;">' + pmLevelCount['PM1'] + '</strong></div>' +
+        '<div class="dash-stat-pill">PM2: <strong style="color:#fbbf24;">' + pmLevelCount['PM2'] + '</strong></div>' +
+        '<div class="dash-stat-pill">PM3: <strong style="color:#c084fc;">' + pmLevelCount['PM3'] + '</strong></div>' +
+        '<div class="dash-stat-pill">PM4: <strong style="color:#f87171;">' + pmLevelCount['PM4'] + '</strong></div>';
+
+      var pmLevels = ['PM1', 'PM2', 'PM3', 'PM4'];
+      var activePMFilter = null;
+
+      function renderPMFilteredTable() {
+        var filteredLogs = periodPMLogs;
+        if (activePMFilter) {
+          filteredLogs = periodPMLogs.filter(function (p) {
+            return getNormPM(p.pmLevel) === activePMFilter;
+          });
+          tblHeading.innerHTML = 'MATRIKS DOKUMENTASI TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(activePMFilter) + '</strong> (' + filteredLogs.length + ' Servis) <button type="button" onclick="window._resetPMFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'MATRIKS DOKUMENTASI PELAKSANAAN PREVENTIVE MAINTENANCE (' + filteredLogs.length + ' Servis)';
+        }
+
+        var rowsHtml = '';
+        filteredLogs.forEach(function (p, idx) {
+          var norm = getNormPM(p.pmLevel);
+          var pmPill = '<span style="border: 1.5px solid #0284c7; color: #0369a1; background: #f0f9ff; padding: 2.5px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; display: inline-block;">' + escapeHtml(norm) + '</span>';
+          if (norm === 'PM2') pmPill = '<span class="dash-status-pill-continue">' + escapeHtml(norm) + '</span>';
+          else if (norm === 'PM3') pmPill = '<span style="border: 1.5px solid #9333ea; color: #7e22ce; background: #faf5ff; padding: 2.5px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; display: inline-block;">' + escapeHtml(norm) + '</span>';
+          else if (norm === 'PM4') pmPill = '<span class="dash-status-pill-waiting">' + escapeHtml(norm) + '</span>';
+
+          var pmRemarks = String(p.remarks || '').trim();
+          if (!pmRemarks || /#(ERROR!|VALUE!|REF!|NAME\?|N\/A)/i.test(pmRemarks)) {
+            pmRemarks = 'Servis berkala sesuai checklist ' + norm;
+          }
+
+          rowsHtml += '<tr>' +
+            '<td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td>' +
+            '<td>' + escapeHtml(p.tanggal ? formatDateDDMMYYYY(p.tanggal) : '-') + '</td>' +
+            '<td><strong style="color:#0f172a; font-weight:800;">' + escapeHtml(p.noUnit) + '</strong></td>' +
+            '<td style="text-align:center;">' + pmPill + '</td>' +
+            '<td style="text-align:center; font-weight:800; color:#0f172a;">' + (p.hmUnit ? (p.hmUnit + ' HM') : '-') + '</td>' +
+            '<td>' + escapeHtml(p.namaMekanik) + '</td>' +
+            '<td style="font-size:12px; color:#475569; line-height:1.4;">' + escapeHtml(pmRemarks) + '</td>' +
+            '</tr>';
+        });
+        tbody.innerHTML = rowsHtml || '<tr><td colspan="7" style="text-align:center; padding:25px; color:#64748b; font-size:12.5px;">Tidak ada riwayat servis PM untuk kategori filter yang dipilih.</td></tr>';
+      }
+
+      window._resetPMFilter = function () {
+        activePMFilter = null;
+        renderPMFilteredTable();
+      };
+
+      chartConfig = {
+        type: 'bar',
+        data: {
+          labels: pmLevels,
+          datasets: [{
+            label: 'Jumlah Servis PM Terlaksana',
+            data: [pmLevelCount['PM1'], pmLevelCount['PM2'], pmLevelCount['PM3'], pmLevelCount['PM4']],
+            backgroundColor: ['rgba(56, 189, 248, 0.85)', 'rgba(245, 158, 11, 0.85)', 'rgba(168, 85, 247, 0.85)', 'rgba(239, 68, 68, 0.85)'],
+            borderColor: ['#38bdf8', '#f59e0b', '#a855f7', '#ef4444'],
+            borderWidth: 1.5,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: function (evt, elements) {
+            if (elements && elements.length > 0) {
+              var clickedIdx = elements[0].index;
+              var targetLevel = pmLevels[clickedIdx];
+              activePMFilter = (activePMFilter === targetLevel) ? null : targetLevel;
+              renderPMFilteredTable();
+            }
+          },
+          scales: {
+            y: { ticks: { stepSize: 1, color: '#334155', font: { weight: '600', size: 11 } }, grid: { color: 'rgba(0,0,0,0.06)' } },
+            x: { ticks: { color: '#0f172a', font: { weight: '700', size: 11 } }, grid: { display: false } }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr><th style="width:45px; text-align:center;">NO</th><th>TANGGAL</th><th>NO UNIT</th><th style="text-align:center;">LEVEL PM</th><th style="text-align:center;">HM UNIT</th><th>TEKNISI PELAKSANA</th><th>CATATAN & PART DIGANTI</th></tr>';
+      renderPMFilteredTable();
+
+      // Auto-fetch data server secara asinkron di latar belakang jika belum pernah ditarik
+      if (typeof google !== 'undefined' && google.script && google.script.run && (!window._hasFetchedServerPMLogs)) {
+        window._hasFetchedServerPMLogs = true;
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.success && res.logs && res.logs.length > 0) {
+              globalPMLogs = res.logs;
+              if (typeof updateDashboardPMMetrics === 'function') updateDashboardPMMetrics();
+              if (currentActiveMetricType === 'pm') {
+                openDashboardMetricModal('pm');
+              }
+            }
+          })
+          .getPMLogs();
+      }
+
+    } else if (metricType === 'inspection') {
+      titleEl.textContent = 'CHECKLIST INSPEKSI ELEKTRIKAL & AC SYSTEM';
+      subEl.textContent = 'Pemeriksaan rutin kelistrikan: Starter, Alternator, Lampu & Rotary, Wiring, dan Sistem AC (' + periodLabel + ')';
+
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        if (!globalInspectionLogs || globalInspectionLogs.length === 0) {
+          if (typeof getInitialInspectionLogsFallback === 'function') {
+            globalInspectionLogs = getInitialInspectionLogsFallback();
+          }
+        }
+      }
+
+      var periodInspectionLogs = (globalInspectionLogs || []).filter(function (i) {
+        return isDateInSelectedPeriod(i.tanggal, selM, selY);
+      });
+      if (typeof sortListByDateDescending === 'function') {
+        periodInspectionLogs = sortListByDateDescending(periodInspectionLogs, 'tanggal');
+      }
+
+      badgeEl.textContent = periodInspectionLogs.length + ' LOG INSPEKSI (' + periodLabel + ')';
+      headingEl.textContent = 'PROPORSI RIWAYAT INSPEKSI: ELECTRICAL VS AC SYSTEM';
+      subnoteEl.textContent = 'Klik legenda (coret) atau irisan donat untuk menyaring: ELECTRICAL vs AC SYSTEM';
+      tblHeading.textContent = 'MATRIKS RIWAYAT INSPEKSI ELECTRICAL & AC SYSTEM';
+
+      var defaultInspLabels = ['ELECTRICAL', 'AC SYSTEM'];
+
+      function getInspectionSystemCategory(i) {
+        var isAc = (i.tipeInspeksi === 'AC_SYSTEM' || String(i.catatan || '').indexOf('[INSPEKSI AC]') !== -1);
+        return isAc ? 'AC SYSTEM' : 'ELECTRICAL';
+      }
+
+      var totalInsp = periodInspectionLogs.length;
+      var acCount = 0;
+      periodInspectionLogs.forEach(function (i) {
+        if (getInspectionSystemCategory(i) === 'AC SYSTEM') {
+          acCount++;
+        }
+      });
+      var elecCount = Math.max(0, totalInsp - acCount);
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Total Riwayat: <strong>' + totalInsp + ' Log</strong></div>' +
+        '<div class="dash-stat-pill">Inspeksi ELECTRICAL: <strong style="color:#0284c7;">' + elecCount + ' Log</strong></div>' +
+        '<div class="dash-stat-pill">Inspeksi AC SYSTEM: <strong style="color:#059669;">' + acCount + ' Log</strong></div>';
+
+      var isInspEmpty = (elecCount === 0 && acCount === 0);
+
+      function renderInspectionFilteredTable() {
+        if (isInspEmpty) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:25px; color:#64748b; font-size:12.5px;">Nihil: Belum ada data checklist inspeksi pada periode ' + escapeHtml(periodLabel) + '.</td></tr>';
+          return;
+        }
+        var activeLabels = getChartActiveLabels(dashMetricChartInstance, defaultInspLabels);
+        var filteredLogs = periodInspectionLogs.filter(function (i) {
+          return activeLabels.indexOf(getInspectionSystemCategory(i)) !== -1;
+        });
+
+        window._currentDashboardInspLogs = filteredLogs || [];
+
+        if (activeLabels.length === defaultInspLabels.length) {
+          tblHeading.textContent = 'MATRIKS RIWAYAT INSPEKSI ELECTRICAL & AC SYSTEM (' + filteredLogs.length + ' Log)';
+        } else if (activeLabels.length > 0) {
+          tblHeading.innerHTML = 'MATRIKS INSPEKSI TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(activeLabels.join(', ')) + '</strong> (' + filteredLogs.length + ' Log) <button type="button" onclick="window._resetInspectionFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'MATRIKS RIWAYAT INSPEKSI (0 Log - Filter Nonaktif)';
+        }
+
+        var rowsHtml = '';
+        filteredLogs.forEach(function (i, idx) {
+          var isAc = (i.tipeInspeksi === 'AC_SYSTEM' || String(i.catatan || '').indexOf('[INSPEKSI AC]') !== -1);
+          var sysBadge = isAc
+            ? '<span style="border: 1px solid rgba(16, 185, 129, 0.6); color: #0f172a; background: rgba(16, 185, 129, 0.15); padding: 2px 7px; border-radius: 4px; font-weight: 800; font-size: 10.5px;">❄️ AC SYSTEM</span>'
+            : '<span style="border: 1px solid rgba(56, 189, 248, 0.6); color: #0f172a; background: rgba(56, 189, 248, 0.15); padding: 2px 7px; border-radius: 4px; font-weight: 800; font-size: 10.5px;">⚡ ELECTRICAL</span>';
+
+          var safeU = escapeHtml(i.noUnit || '-');
+          var safeTgl = escapeHtml(i.tanggal ? formatDateDDMMYYYY(i.tanggal) : '-');
+          var rawHM = i.hmUnit !== undefined && i.hmUnit !== null && i.hmUnit !== '' ? Number(i.hmUnit) : NaN;
+          var hmDisplay = !isNaN(rawHM) ? rawHM.toLocaleString('id-ID') : (escapeHtml(i.hmUnit || '-'));
+          var safeMek = escapeHtml(i.inspektor || '-');
+
+          // Status Kondisi
+          var condBadge = '';
+          if (isAc) {
+            var rawAcCatatan = i.catatan || '';
+            var mAcCatatan = rawAcCatatan.match(/Catatan:\s*(.+)$/i);
+            var acExtraNote = mAcCatatan ? mAcCatatan[1].trim() : '';
+            var hasAcRealNote = (acExtraNote && acExtraNote !== '-' && acExtraNote.toUpperCase() !== 'NIHIL' && acExtraNote.toUpperCase() !== 'N/A');
+            var acSt = String(i.statusUnit || '').toUpperCase();
+            var isAcProblem = (
+              acSt.indexOf('RUSAK') !== -1 ||
+              acSt.indexOf('ANGIN') !== -1 ||
+              acSt.indexOf('BREAKDOWN') !== -1 ||
+              acSt.indexOf('KURANG') !== -1 ||
+              acSt.indexOf('MONITORING') !== -1 ||
+              hasAcRealNote
+            );
+
+            if (isAcProblem) {
+              condBadge = '<span style="border: 1px solid #ef4444; color: #dc2626; background: #fef2f2; padding: 2px 7px; border-radius: 3px; font-weight: 800; font-size: 10.5px;">⚠️ ADA TEMUAN</span>';
+            } else {
+              condBadge = '<span style="border: 1px solid #10b981; color: #059669; background: #ecfdf5; padding: 2px 7px; border-radius: 3px; font-weight: 800; font-size: 10.5px;">❄️ DINGIN (RFU)</span>';
+            }
+          } else {
+            var rawElecCatatan = i.catatan || '';
+            var cleanElecCatatan = rawElecCatatan
+              .replace(/^\[STATUS\s*UNIT:[^\]]*\]\s*/i, '')
+              .replace(/\[Cabin:[^\]]*\]\s*/i, '')
+              .replace(/^\[INSPEKSI\s*AC\]\s*/i, '')
+              .trim();
+            var hasElecNote = (cleanElecCatatan && cleanElecCatatan !== '-' && cleanElecCatatan.toUpperCase() !== 'NIHIL' && cleanElecCatatan.toUpperCase() !== 'N/A');
+            var elecSt = String(i.statusUnit || '').toUpperCase();
+            var isBreakdown = (elecSt.indexOf('BREAKDOWN') !== -1 || elecSt.indexOf('RUSAK') !== -1 || rawElecCatatan.toUpperCase().indexOf('[STATUS UNIT: BREAKDOWN]') !== -1);
+            var isChecklistProblem = (
+              String(i.startingMotor || '').toUpperCase().indexOf('DROP') !== -1 ||
+              String(i.startingMotor || '').toUpperCase().indexOf('RUSAK') !== -1 ||
+              String(i.alternator || '').toUpperCase().indexOf('DROP') !== -1 ||
+              String(i.alternator || '').toUpperCase().indexOf('RUSAK') !== -1 ||
+              String(i.lightingSystem || '').toUpperCase().indexOf('RUSAK') !== -1 ||
+              String(i.lightingSystem || '').toUpperCase().indexOf('MATI') !== -1
+            );
+
+            if (hasElecNote || isBreakdown || isChecklistProblem) {
+              condBadge = '<span style="border: 1px solid #ef4444; color: #dc2626; background: #fef2f2; padding: 2px 7px; border-radius: 3px; font-weight: 800; font-size: 10.5px;">⚠️ ADA TEMUAN</span>';
+            } else {
+              condBadge = '<span style="border: 1px solid #10b981; color: #059669; background: #ecfdf5; padding: 2px 7px; border-radius: 3px; font-weight: 800; font-size: 10.5px;">✅ RFU / NORMAL</span>';
+            }
+          }
+
+          rowsHtml += '<tr>' +
+            '<td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td>' +
+            '<td style="text-align:center; font-weight:600;">' + safeTgl + '</td>' +
+            '<td><strong style="color:#0f172a; font-weight:800; font-size:12.5px;">' + safeU + '</strong></td>' +
+            '<td style="text-align:center; font-weight:700; color:#d97706; font-family:ui-monospace, monospace;">' + hmDisplay + '</td>' +
+            '<td style="text-align:center;">' + sysBadge + '</td>' +
+            '<td style="font-weight:600; color:#1e293b;">' + safeMek + '</td>' +
+            '<td style="text-align:center;">' + condBadge + '</td>' +
+            '<td style="text-align:center;"><button type="button" class="btn-secondary" style="padding: 4px 12px; font-size: 11px; font-weight: 800; border-radius: 6px; color: #0f172a; border: 1.5px solid #94a3b8; background: #f8fafc; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background=\'#e2e8f0\'" onmouseout="this.style.background=\'#f8fafc\'" onclick="openDetailInspectionModal(window._currentDashboardInspLogs[' + idx + '])">Detail</button></td>' +
+            '</tr>';
+        });
+        tbody.innerHTML = rowsHtml || '<tr><td colspan="8" style="text-align:center; padding:20px; color:#64748b;">Tidak ada data checklist inspeksi yang sesuai dengan filter grafik yang dipilih.</td></tr>';
+      }
+
+      window._resetInspectionFilter = function () {
+        if (dashMetricChartInstance) {
+          for (var j = 0; j < defaultInspLabels.length; j++) {
+            if (typeof dashMetricChartInstance.getDataVisibility === 'function' && !dashMetricChartInstance.getDataVisibility(j)) {
+              dashMetricChartInstance.toggleDataVisibility(j);
+            }
+          }
+          dashMetricChartInstance.update();
+        }
+        renderInspectionFilteredTable();
+      };
+
+      chartConfig = {
+        type: 'doughnut',
+        data: {
+          labels: isInspEmpty ? ['Nihil Data Periode Ini'] : defaultInspLabels,
+          datasets: [{
+            data: isInspEmpty ? [1] : [elecCount, acCount],
+            backgroundColor: isInspEmpty ? ['rgba(148, 163, 184, 0.3)'] : ['rgba(2, 132, 199, 0.85)', 'rgba(16, 185, 129, 0.85)'],
+            borderColor: isInspEmpty ? ['#94a3b8'] : ['#0284c7', '#10b981'],
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#0f172a', font: { weight: '700', size: 11.5 } },
+              onClick: function (evt, legendItem, legend) {
+                var ci = legend.chart;
+                ci.toggleDataVisibility(legendItem.index);
+                ci.update();
+                renderInspectionFilteredTable();
+              }
+            }
+          },
+          onClick: function (evt, elements, chart) {
+            if (elements && elements.length > 0) {
+              handleChartElementSoloClick(chart, elements[0].index, renderInspectionFilteredTable);
+            }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr>' +
+        '<th style="width:40px; text-align:center;">NO</th>' +
+        '<th style="width:105px; text-align:center;">TANGGAL</th>' +
+        '<th>NO UNIT</th>' +
+        '<th style="width:90px; text-align:center;">HM UNIT</th>' +
+        '<th style="width:130px; text-align:center;">JENIS INSPEKSI</th>' +
+        '<th>INSPEKTOR</th>' +
+        '<th style="width:140px; text-align:center;">STATUS KONDISI</th>' +
+        '<th style="width:90px; text-align:center;">DETAIL</th>' +
+        '</tr>';
+      renderInspectionFilteredTable();
+
+      // Auto-fetch data server secara asinkron di latar belakang jika belum ada data di memori
+      if (typeof google !== 'undefined' && google.script && google.script.run && (!window._hasFetchedServerInspLogs || !globalInspectionLogs || globalInspectionLogs.length === 0)) {
+        window._hasFetchedServerInspLogs = true;
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.success && res.logs && res.logs.length > 0) {
+              globalInspectionLogs = res.logs;
+              if (appDataCache && appDataCache.inspection) {
+                appDataCache.inspection.data = res.logs;
+              }
+              if (currentActiveMetricType === 'inspection') {
+                openDashboardMetricModal('inspection');
+              }
+            }
+          })
+          .getInspectionLogs();
+      }
+
+    } else if (metricType === 'part_ratio') {
+      titleEl.textContent = 'RASIO PENGGUNAAN SPAREPART';
+      subEl.textContent = 'Akumulasi perbaikan yang memerlukan penggantian spare part (Part Replacement / BAD) (' + periodLabel + ')';
+      badgeEl.textContent = 'KONSUMSI SPAREPART';
+      headingEl.textContent = 'PERBANDINGAN GANTI PART (REPLACE) VS REPARASI TANPA PART (REPAIR)';
+      subnoteEl.textContent = 'Klik legenda (coret) atau irisan donat untuk menyaring: Ganti Part (REPLACE) vs Reparasi Saja (REPAIR)';
+      tblHeading.textContent = 'MATRIKS DETAIL PENGGANTIAN SUKU CADANG & LAMPIRAN FOTO DOKUMENTASI';
+
+      var defaultPartRatioLabels = ['Ganti Spare Part (REPLACE)', 'Reparasi Saja (REPAIR)'];
+
+      var repReplaceList = periodReports.filter(function (r) {
+        var sp = String(r.statusPart || '').toUpperCase();
+        return sp === 'BAD' || sp === 'REPLACE' || sp === 'REPLACE PART';
+      });
+
+      var brkReplaceList = (globalBreakdownLogs || []).filter(function (b) {
+        var matchDate = isDateInSelectedPeriod(b.tanggal, selM, selY);
+        var st = String(b.statusRepair || 'REPLACE').toUpperCase();
+        return matchDate && (st === 'REPLACE' || st === 'WAITING PART');
+      });
+
+      var brkRepairList = (globalBreakdownLogs || []).filter(function (b) {
+        var matchDate = isDateInSelectedPeriod(b.tanggal, selM, selY);
+        var st = String(b.statusRepair || '').toUpperCase();
+        return matchDate && st === 'REPAIR';
+      });
+
+      // Deduplikasi gabungan unit & tanggal (Opsi B: Single Consolidated Incident)
+      var mergedReplaceMap = {};
+
+      // 1. Masukkan data dari Analisa Kerusakan (membawa info namaPart, partNumber, rincian tindakan FAR, foto)
+      brkReplaceList.forEach(function (b) {
+        var key = String(b.noUnit || '').trim().toUpperCase() + '_' + String(b.tanggal || '').trim();
+        var photos = (b.photosList && Array.isArray(b.photosList) && b.photosList.length > 0)
+          ? b.photosList.slice()
+          : (b.urlFoto ? b.urlFoto.split(/[,;\s]+/).map(function (u) { return u.trim(); }).filter(function (u) { return u.length > 0; }) : []);
+        mergedReplaceMap[key] = {
+          sourceType: 'brk',
+          category: 'Ganti Spare Part (REPLACE)',
+          tanggal: b.tanggal,
+          noUnit: b.noUnit || '-',
+          komp: b.namaPart || b.partKomponen || b.komponenGagal || '-',
+          partNumber: b.partNumber || '-',
+          rincian: b.actionTaken || b.rootCause || '-',
+          photos: photos
+        };
+      });
+
+      // 2. Konsolidasikan dengan Laporan Pekerjaan (jika unit & tanggal sama, satukan rincian & foto)
+      repReplaceList.forEach(function (r) {
+        var key = String(r.noUnit || '').trim().toUpperCase() + '_' + String(r.tanggal || '').trim();
+        var repPhotos = [];
+        if (r.urlFotoDokumentasi) {
+          repPhotos = r.urlFotoDokumentasi.split(/[,;\s]+/).map(function (u) { return u.trim(); }).filter(function (u) { return u.length > 0; });
+        }
+        if (r.urlFotoBefore) repPhotos.push(r.urlFotoBefore);
+        if (r.urlFotoAfter) repPhotos.push(r.urlFotoAfter);
+
+        if (mergedReplaceMap[key]) {
+          var existing = mergedReplaceMap[key];
+          existing.sourceType = 'both';
+          if ((!existing.komp || existing.komp === '-') && r.kategoriPekerjaan) {
+            existing.komp = (typeof normalizeCategoryName === 'function') ? normalizeCategoryName(r.kategoriPekerjaan) : r.kategoriPekerjaan;
+          }
+          if (r.deskripsiPekerjaan && existing.rincian.indexOf(r.deskripsiPekerjaan) === -1) {
+            existing.rincian = existing.rincian + (existing.rincian !== '-' ? ' | ' : '') + r.deskripsiPekerjaan;
+          }
+          repPhotos.forEach(function (ph) {
+            if (existing.photos.indexOf(ph) === -1) existing.photos.push(ph);
+          });
+        } else {
+          mergedReplaceMap[key] = {
+            sourceType: 'rep',
+            category: 'Ganti Spare Part (REPLACE)',
+            tanggal: r.tanggal,
+            noUnit: r.noUnit || '-',
+            komp: (typeof normalizeCategoryName === 'function') ? normalizeCategoryName(r.kategoriPekerjaan) : (r.kategoriPekerjaan || '-'),
+            partNumber: '-',
+            rincian: r.deskripsiPekerjaan || '-',
+            photos: repPhotos
+          };
+        }
+      });
+
+      var uniqueReplaceItems = Object.keys(mergedReplaceMap).map(function (k) { return mergedReplaceMap[k]; });
+      var totalReplaceCount = uniqueReplaceItems.length;
+      var totalGoodCount = brkRepairList.length;
+      var totalSample = totalReplaceCount + totalGoodCount;
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Jumlah Ganti Part: <strong style="color:var(--accent-orange); font-size:14px;">' + totalReplaceCount + ' Kasus</strong></div>' +
+        '<div class="dash-stat-pill">Reparasi Saja (REPAIR): <strong style="color:#34d399;">' + totalGoodCount + ' Kasus</strong></div>' +
+        '<div class="dash-stat-pill">Total Intervensi Terdata: <strong style="color:#0284c7;">' + totalSample + ' Kasus</strong></div>';
+
+      var allPartRatioItems = uniqueReplaceItems.slice();
+      brkRepairList.forEach(function (b) {
+        var safePhotos = (b.photosList && Array.isArray(b.photosList) && b.photosList.length > 0)
+          ? b.photosList
+          : (b.urlFoto ? b.urlFoto.split(/[,;\s]+/).map(function (u) { return u.trim(); }).filter(function (u) { return u.length > 0; }) : []);
+        allPartRatioItems.push({
+          sourceType: 'brk_repair',
+          category: 'Reparasi Saja (REPAIR)',
+          tanggal: b.tanggal,
+          noUnit: b.noUnit || '-',
+          komp: b.namaPart || b.partKomponen || b.komponenGagal || '-',
+          partNumber: '-',
+          rincian: b.actionTaken || b.rootCause || 'Reparasi komponen elektrikal tanpa penggantian spare part',
+          photos: safePhotos
+        });
+      });
+
+      if (typeof sortListByDateDescending === 'function') {
+        allPartRatioItems = sortListByDateDescending(allPartRatioItems, 'tanggal');
+      }
+
+      function renderPartRatioFilteredTable() {
+        var activeLabels = getChartActiveLabels(dashMetricChartInstance, defaultPartRatioLabels);
+        var filteredItems = allPartRatioItems.filter(function (itm) {
+          return activeLabels.indexOf(itm.category) !== -1;
+        });
+
+        if (activeLabels.length === defaultPartRatioLabels.length) {
+          tblHeading.textContent = 'MATRIKS DETAIL PENGGANTIAN SUKU CADANG & REPARASI (' + filteredItems.length + ' Kasus)';
+        } else if (activeLabels.length > 0) {
+          tblHeading.innerHTML = 'MATRIKS PART TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(activeLabels.join(', ')) + '</strong> (' + filteredItems.length + ' Kasus) <button type="button" onclick="window._resetPartRatioFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'MATRIKS DETAIL PENGGANTIAN SUKU CADANG (0 Kasus - Filter Nonaktif)';
+        }
+
+        var rowsHtml = '';
+        var rowIdx = 1;
+        filteredItems.forEach(function (item) {
+          var safeUnit = escapeHtml(item.noUnit);
+          var safeKomp = escapeHtml(item.komp);
+          var safePn = escapeHtml(item.partNumber);
+          var safeAction = escapeHtml(item.rincian);
+          var safeDate = escapeHtml(item.tanggal ? formatDateDDMMYYYY(item.tanggal) : '-');
+
+          var photosHtml = '<span style="color:#64748b; font-size:11px;">-</span>';
+          if (item.photos && item.photos.length > 0) {
+            photosHtml = '<div style="display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;">';
+            item.photos.forEach(function (u) {
+              var directThumb = getDirectDriveImageUrl(u);
+              photosHtml += '<img src="' + directThumb + '" onclick="openImageModal(\'' + directThumb + '\')" style="width: 34px; height: 34px; border-radius: 4px; object-fit: cover; cursor: pointer; border: 1.5px solid #0284c7;" title="Klik untuk perbesar foto">';
+            });
+            photosHtml += '</div>';
+          }
+
+          var sourceTag = '';
+          if (item.sourceType === 'brk') {
+            sourceTag = '<span style="border: 1.5px solid #0284c7; color: #0369a1; background: #f0f9ff; padding: 2px 7px; border-radius: 4px; font-weight: 800; font-size: 10px; display: inline-block;">ANALISA KERUSAKAN</span>';
+          } else if (item.sourceType === 'rep') {
+            sourceTag = '<span class="dash-status-pill-waiting" style="font-size:10px; padding:2px 7px;">REPORT BAD</span>';
+          } else if (item.sourceType === 'both') {
+            sourceTag = '<span style="border: 1.5px solid #d97706; color: #b45309; background: #fef3c7; padding: 2px 7px; border-radius: 4px; font-weight: 800; font-size: 10px; display: inline-block;">ANALISA & REPORT</span>';
+          } else {
+            sourceTag = '<span class="dash-status-pill-rfu" style="font-size:10px; padding:2px 7px;">REPARASI SAJA</span>';
+          }
+
+          var pnTag = item.partNumber !== '-'
+            ? '<span style="font-family: monospace; font-weight: 700; color: #0f172a; background: #f1f5f9; border: 1px solid #cbd5e1; padding: 1px 6px; border-radius: 3px;">' + safePn + '</span>'
+            : '<span style="color:#64748b; font-size: 11px;">-</span>';
+
+          rowsHtml += '<tr>' +
+            '<td style="text-align:center; color:#64748b; font-weight:600;">' + rowIdx++ + '</td>' +
+            '<td style="text-align:center;">' + sourceTag + '</td>' +
+            '<td>' + safeDate + '</td>' +
+            '<td><strong style="color:#0f172a; font-weight:800;">' + safeUnit + '</strong></td>' +
+            '<td><strong style="color:#d97706;">' + safeKomp + '</strong></td>' +
+            '<td style="text-align:center;">' + pnTag + '</td>' +
+            '<td style="font-size: 11.5px; color: #334155; line-height: 1.3;">' + safeAction + '</td>' +
+            '<td style="text-align:center;">' + photosHtml + '</td>' +
+            '</tr>';
+        });
+
+        tbody.innerHTML = rowsHtml || '<tr><td colspan="8" style="text-align:center; padding:20px; color:#64748b;">Tidak ada data perbaikan suku cadang yang sesuai filter grafik.</td></tr>';
+      }
+
+      window._resetPartRatioFilter = function () {
+        if (dashMetricChartInstance) {
+          for (var j = 0; j < defaultPartRatioLabels.length; j++) {
+            if (typeof dashMetricChartInstance.getDataVisibility === 'function' && !dashMetricChartInstance.getDataVisibility(j)) {
+              dashMetricChartInstance.toggleDataVisibility(j);
+            }
+          }
+          dashMetricChartInstance.update();
+        }
+        renderPartRatioFilteredTable();
+      };
+
+      chartConfig = {
+        type: 'doughnut',
+        data: {
+          labels: defaultPartRatioLabels,
+          datasets: [{
+            data: [totalReplaceCount, totalGoodCount],
+            backgroundColor: ['rgba(239, 68, 68, 0.8)', 'rgba(16, 185, 129, 0.8)'],
+            borderColor: ['#ef4444', '#10b981'],
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#0f172a', font: { weight: '700', size: 11.5 } },
+              onClick: function (evt, legendItem, legend) {
+                var ci = legend.chart;
+                ci.toggleDataVisibility(legendItem.index);
+                ci.update();
+                renderPartRatioFilteredTable();
+              }
+            }
+          },
+          onClick: function (evt, elements, chart) {
+            if (elements && elements.length > 0) {
+              handleChartElementSoloClick(chart, elements[0].index, renderPartRatioFilteredTable);
+            }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr><th style="width:40px; text-align:center;">NO</th><th style="width:115px; text-align:center;">SUMBER DATA</th><th>TANGGAL</th><th>NO UNIT</th><th>KOMPONEN GAGAL</th><th style="text-align:center;">PART NUMBER</th><th>RINCIAN TINDAKAN / INVESTIGASI</th><th style="width:100px; text-align:center;">DOKUMENTASI FOTO</th></tr>';
+      renderPartRatioFilteredTable();
+
+    } else if (metricType === 'top_category') {
+      titleEl.textContent = 'KATEGORI KERUSAKAN TERTINGGI';
+      subEl.textContent = 'Sistem elektrikal dengan frekuensi breakdown terbanyak di lapangan (' + periodLabel + ')';
+      badgeEl.textContent = 'PARETO UTAMA';
+      headingEl.textContent = 'PERINGKAT KERUSAKAN SISTEM ELEKTRIKAL (PARETO)';
+      subnoteEl.textContent = 'Prioritas investigasi unscheduled stoppage (Klik batang grafik kategori untuk melihat rincian kasus)';
+      thead.innerHTML = '<tr><th style="width:45px; text-align:center;">NO</th><th>TANGGAL</th><th>NO UNIT</th><th>TINDAKAN KOREKTIF</th><th>MEKANIK</th><th style="text-align:center;">DOWNTIME</th><th style="text-align:center;">STATUS UNIT</th></tr>';
+
+      var catMap = {};
+      periodReports.forEach(function (r) {
+        var c = (typeof normalizeCategoryName === 'function')
+          ? normalizeCategoryName(r.kategoriPekerjaan)
+          : String(r.kategoriPekerjaan || 'LAIN-LAIN').trim().toUpperCase();
+        if (!catMap[c]) catMap[c] = { cases: 0, dt: 0, reports: [] };
+        catMap[c].cases++;
+        catMap[c].dt += (parseFloat(r.downtimeJam) || 0);
+        catMap[c].reports.push(r);
+      });
+
+      // Peringkat Pareto: Kasus Terbanyak -> Akumulasi Jam Downtime Terbesar
+      var sortedCats = Object.keys(catMap).sort(function (a, b) {
+        if (catMap[b].cases !== catMap[a].cases) {
+          return catMap[b].cases - catMap[a].cases;
+        }
+        return catMap[b].dt - catMap[a].dt;
+      });
+
+      var topCatName = sortedCats.length > 0 ? sortedCats[0] : '-';
+      var topCases = sortedCats.length > 0 ? catMap[topCatName].cases : 0;
+      var topDt = sortedCats.length > 0 ? catMap[topCatName].dt : 0;
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Kategori Puncak: <strong style="color:var(--accent-orange); font-size:14px;">' + escapeHtml(topCatName) + '</strong></div>' +
+        '<div class="dash-stat-pill">Total Kasus: <strong>' + topCases + ' Kejadian</strong></div>' +
+        '<div class="dash-stat-pill">Akumulasi Downtime: <strong>' + topDt.toFixed(1) + ' Jam</strong></div>';
+
+      var activeParetoCat = topCatName;
+
+      function renderParetoCategoryTable(targetCat) {
+        activeParetoCat = targetCat;
+        var catData = catMap[targetCat];
+        if (!catData) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#64748b;">Belum ada data kasus untuk kategori ini.</td></tr>';
+          return;
+        }
+        var isRank1 = (targetCat === topCatName);
+        var rankBadge = isRank1
+          ? ' <span style="background:rgba(245,158,11,0.2); color:#d97706; border:1px solid rgba(245,158,11,0.4); padding:2px 7px; border-radius:4px; font-size:10px; font-weight:800;">PERINGKAT 1</span>'
+          : '';
+        tblHeading.innerHTML = 'RINCIAN KASUS KATEGORI: <strong style="color:var(--accent-orange);">' + escapeHtml(targetCat) + '</strong> (' + catData.cases + ' Kejadian, ' + catData.dt.toFixed(1) + ' Jam DT)' + rankBadge +
+          (sortedCats.length > 1 ? ' <button type="button" onclick="window._resetParetoFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Kembali ke Peringkat 1</button>' : '');
+
+        var rList = catData.reports || [];
+        if (typeof sortListByDateDescending === 'function') {
+          rList = sortListByDateDescending(rList, 'tanggal');
+        }
+
+        var rowsHtml = '';
+        rList.forEach(function (r, idx) {
+          var stUpper = String(r.status || 'RFU').toUpperCase().trim();
+          var sPill = (stUpper === 'CONTINUE')
+            ? '<span class="dash-status-pill-continue">CONTINUE</span>'
+            : ((stUpper.indexOf('WAITING') !== -1 || stUpper.indexOf('BREAKDOWN') !== -1)
+              ? '<span class="dash-status-pill-waiting">WAITING PART</span>'
+              : '<span class="dash-status-pill-rfu">RFU</span>');
+          rowsHtml += '<tr><td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td><td>' + escapeHtml(r.tanggal ? formatDateDDMMYYYY(r.tanggal) : '-') + '</td><td><strong style="color:#0f172a; font-weight:800;">' + escapeHtml(r.noUnit) + '</strong></td><td>' + escapeHtml(r.deskripsiPekerjaan || '-') + '</td><td>' + escapeHtml(r.namaMekanik || '-') + '</td><td style="text-align:center; font-weight:800; color:#0f172a;">' + (r.downtimeJam || '0') + ' Jam</td><td style="text-align:center;">' + sPill + '</td></tr>';
+        });
+        tbody.innerHTML = rowsHtml || '<tr><td colspan="7" style="text-align:center; padding:20px; color:#64748b;">Belum ada data pekerjaan di kategori ini.</td></tr>';
+      }
+
+      window._resetParetoFilter = function () {
+        renderParetoCategoryTable(topCatName);
+      };
+
+      chartConfig = {
+        type: 'bar',
+        data: {
+          labels: sortedCats,
+          datasets: [{
+            label: 'Frekuensi Breakdown (Kasus)',
+            data: sortedCats.map(function (c) { return catMap[c].cases; }),
+            backgroundColor: 'rgba(245, 158, 11, 0.8)',
+            borderColor: '#f59e0b',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: function (evt, elements) {
+            if (elements && elements.length > 0) {
+              var clickedIdx = elements[0].index;
+              var clickedCat = sortedCats[clickedIdx];
+              if (clickedCat) {
+                renderParetoCategoryTable(clickedCat);
+              }
+            }
+          },
+          scales: {
+            y: { ticks: { stepSize: 1, color: '#334155', font: { weight: '600', size: 11 } }, grid: { color: 'rgba(0,0,0,0.06)' } },
+            x: { ticks: { color: '#0f172a', font: { weight: '700', size: 11 }, maxRotation: 45, minRotation: 20 }, grid: { display: false } }
+          }
+        }
+      };
+
+      renderParetoCategoryTable(topCatName);
+
+    } else if (metricType === 'matrix_system') {
+      titleEl.textContent = 'MATRIKS KERUSAKAN SISTEM ELEKTRIKAL';
+      subEl.textContent = 'Komparasi proporsi kegagalan per sub-sistem kelistrikan armada (' + periodLabel + ')';
+      badgeEl.textContent = 'DISTRIBUSI SISTEM';
+      headingEl.textContent = 'PROPORSI KERUSAKAN KELISTRIKAN BERDASARKAN SISTEM';
+      subnoteEl.textContent = 'Persentase kontribusi breakdown kelistrikan (Klik legenda atau irisan pie untuk memfilter tabel)';
+      tblHeading.textContent = 'MATRIKS REKAPITULASI KERUSAKAN SELURUH SISTEM';
+
+      var catMap = {};
+      periodReports.forEach(function (r) {
+        var c = (typeof normalizeCategoryName === 'function')
+          ? normalizeCategoryName(r.kategoriPekerjaan)
+          : String(r.kategoriPekerjaan || 'LAIN-LAIN').trim().toUpperCase();
+        if (!catMap[c]) catMap[c] = { cases: 0, dt: 0 };
+        catMap[c].cases++;
+        catMap[c].dt += (parseFloat(r.downtimeJam) || 0);
+      });
+
+      var totalCases = periodReports.length;
+      var totalDtAll = periodReports.reduce(function (acc, r) { return acc + (parseFloat(r.downtimeJam) || 0); }, 0);
+      var systemCount = Object.keys(catMap).length;
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Total Sistem Terlibat: <strong style="color:#38bdf8;">' + systemCount + ' Sistem</strong></div>' +
+        '<div class="dash-stat-pill">Total Kasus: <strong>' + totalCases + ' Pekerjaan</strong></div>' +
+        '<div class="dash-stat-pill">Total Downtime: <strong>' + totalDtAll.toFixed(1) + ' Jam</strong></div>';
+
+      var labels = Object.keys(catMap);
+      var dataCases = labels.map(function (c) { return catMap[c].cases; });
+      var colors = ['#f59e0b', '#38bdf8', '#10b981', '#ef4444', '#a855f7', '#ec4899', '#6366f1', '#14b8a6', '#f97316'];
+
+      function renderMatrixSystemFilteredTable() {
+        var activeLabels = getChartActiveLabels(dashMetricChartInstance, labels);
+        var filteredLabels = labels.filter(function (c) {
+          return activeLabels.indexOf(c) !== -1;
+        });
+
+        if (activeLabels.length === labels.length) {
+          tblHeading.textContent = 'MATRIKS REKAPITULASI KERUSAKAN SELURUH SISTEM (' + filteredLabels.length + ' Sistem)';
+        } else if (activeLabels.length > 0) {
+          tblHeading.innerHTML = 'MATRIKS SISTEM TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(activeLabels.join(', ')) + '</strong> (' + filteredLabels.length + ' Sistem) <button type="button" onclick="window._resetMatrixSystemFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'MATRIKS REKAPITULASI KERUSAKAN SISTEM (0 Sistem - Filter Nonaktif)';
+        }
+
+        var rowsHtml = '';
+        filteredLabels.forEach(function (c, idx) {
+          var itm = catMap[c];
+          var pctCases = totalCases > 0 ? ((itm.cases / totalCases) * 100).toFixed(1) : '0.0';
+          var pctDt = totalDtAll > 0 ? ((itm.dt / totalDtAll) * 100).toFixed(1) : '0.0';
+          rowsHtml += '<tr><td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td><td><strong style="color:#0f172a; font-weight:800;">' + escapeHtml(c) + '</strong></td><td style="text-align:center; font-weight:700; color:#0f172a;">' + itm.cases + ' Kasus</td><td style="text-align:center; font-weight:700; color:#0f172a;">' + itm.dt.toFixed(1) + ' Jam</td><td style="text-align:center; color:#d97706; font-weight:800;">' + pctCases + '%</td><td style="text-align:center; color:#0284c7; font-weight:800;">' + pctDt + '%</td></tr>';
+        });
+        tbody.innerHTML = rowsHtml || '<tr><td colspan="6" style="text-align:center; padding:20px; color:#64748b;">Tidak ada data sistem yang sesuai dengan filter grafik yang dipilih.</td></tr>';
+      }
+
+      window._resetMatrixSystemFilter = function () {
+        if (dashMetricChartInstance) {
+          for (var j = 0; j < labels.length; j++) {
+            if (typeof dashMetricChartInstance.getDataVisibility === 'function' && !dashMetricChartInstance.getDataVisibility(j)) {
+              dashMetricChartInstance.toggleDataVisibility(j);
+            }
+          }
+          dashMetricChartInstance.update();
+        }
+        renderMatrixSystemFilteredTable();
+      };
+
+      chartConfig = {
+        type: 'pie',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: dataCases,
+            backgroundColor: colors.slice(0, labels.length),
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#0f172a', font: { weight: '700', size: 11.5 } },
+              onClick: function (evt, legendItem, legend) {
+                var ci = legend.chart;
+                ci.toggleDataVisibility(legendItem.index);
+                ci.update();
+                renderMatrixSystemFilteredTable();
+              }
+            }
+          },
+          onClick: function (evt, elements, chart) {
+            if (elements && elements.length > 0) {
+              handleChartElementSoloClick(chart, elements[0].index, renderMatrixSystemFilteredTable);
+            }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr><th style="width:45px; text-align:center;">NO</th><th>NAMA SISTEM ELEKTRIKAL</th><th style="text-align:center;">JUMLAH KASUS</th><th style="text-align:center;">AKUMULASI DOWNTIME</th><th style="text-align:center;">KONTRIBUSI KASUS (%)</th><th style="text-align:center;">KONTRIBUSI DT (%)</th></tr>';
+      renderMatrixSystemFilteredTable();
+
+    } else if (metricType === 'matrix_recurring') {
+      titleEl.textContent = 'MATRIKS KERUSAKAN BERULANG (RECURRING)';
+      subEl.textContent = 'Identifikasi unit dengan kerusakan berulang pada sistem yang sama (>1 kali) (' + periodLabel + ')';
+      badgeEl.textContent = 'DEFECT ELIMINATION';
+      headingEl.textContent = 'JUMLAH KASUS BERULANG PER NOMOR UNIT';
+      subnoteEl.textContent = 'Fokus investigasi RCFA agar defect yang sama tidak berulang pada unit sejenis (Klik batang unit untuk memfilter)';
+      tblHeading.textContent = 'DAFTAR DETAIL KASUS KERUSAKAN BERULANG AKTIF';
+
+      var unitCatMap = {};
+      periodReports.forEach(function (r) {
+        var u = String(r.noUnit || '').trim().toUpperCase();
+        var c = (typeof normalizeCategoryName === 'function')
+          ? normalizeCategoryName(r.kategoriPekerjaan)
+          : String(r.kategoriPekerjaan || 'LAIN-LAIN').trim().toUpperCase();
+        if (u && u !== '-') {
+          var key = u + '|||' + c;
+          if (!unitCatMap[key]) unitCatMap[key] = { noUnit: u, kategori: c, count: 0, dt: 0, reports: [] };
+          unitCatMap[key].count++;
+          unitCatMap[key].dt += (parseFloat(r.downtimeJam) || 0);
+          unitCatMap[key].reports.push(r);
+        }
+      });
+
+      var recurringList = Object.keys(unitCatMap).map(function (k) { return unitCatMap[k]; }).filter(function (x) { return x.count > 1; });
+      var totalRecurringCases = recurringList.reduce(function (acc, x) { return acc + (x.count - 1); }, 0);
+      var totalRecurringDt = recurringList.reduce(function (acc, x) { return acc + x.dt; }, 0);
+
+      statBar.innerHTML = '<div class="dash-stat-pill">Total Kasus Berulang: <strong style="color:#f87171; font-size:14px;">' + totalRecurringCases + ' Kasus</strong></div>' +
+        '<div class="dash-stat-pill">Unit Terdampak: <strong>' + recurringList.length + ' Unit</strong></div>' +
+        '<div class="dash-stat-pill">Akumulasi Downtime: <strong>' + totalRecurringDt.toFixed(1) + ' Jam</strong></div>';
+
+      var labels = recurringList.map(function (x) { return x.noUnit + ' (' + x.kategori + ')'; });
+      var dataCounts = recurringList.map(function (x) { return x.count; });
+
+      var activeRecurringIdx = null;
+
+      function renderRecurringFilteredTable() {
+        var filteredList = recurringList;
+        if (activeRecurringIdx !== null && recurringList[activeRecurringIdx]) {
+          filteredList = [recurringList[activeRecurringIdx]];
+          tblHeading.innerHTML = 'KASUS BERULANG TERFILTER: <strong style="color:var(--accent-orange);">' + escapeHtml(labels[activeRecurringIdx]) + '</strong> <button type="button" onclick="window._resetRecurringFilter()" style="margin-left:8px; font-size:10.5px; padding:2px 8px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; cursor:pointer; color:#0f172a; font-weight:700;">Tampilkan Semua</button>';
+        } else {
+          tblHeading.textContent = 'DAFTAR DETAIL KASUS KERUSAKAN BERULANG AKTIF (' + recurringList.length + ' Unit Terdampak)';
+        }
+
+        var rowsHtml = '';
+        filteredList.forEach(function (item, idx) {
+          var lastRep = item.reports[item.reports.length - 1];
+          rowsHtml += '<tr><td style="text-align:center; color:#64748b; font-weight:600;">' + (idx + 1) + '</td><td><strong style="color:#0f172a; font-weight:800;">' + escapeHtml(item.noUnit) + '</strong></td><td><strong style="color:#d97706;">' + escapeHtml(item.kategori) + '</strong></td><td style="text-align:center; font-weight:800; color:#dc2626;">' + item.count + ' Kali</td><td style="text-align:center; font-weight:800; color:#0f172a;">' + item.dt.toFixed(1) + ' Jam</td><td style="font-size:11.5px; color:#475569;">' + escapeHtml(lastRep ? lastRep.deskripsiPekerjaan : '-') + '</td><td style="text-align:center;"><span class="dash-status-pill-waiting">PERLU RCFA</span></td></tr>';
+        });
+        tbody.innerHTML = rowsHtml || '<tr><td colspan="7" style="text-align:center; padding:24px; color:#059669; font-weight:700;">✅ Nihil: Tidak ditemukan kerusakan berulang pada sistem yang sama di periode ini.</td></tr>';
+      }
+
+      window._resetRecurringFilter = function () {
+        activeRecurringIdx = null;
+        renderRecurringFilteredTable();
+      };
+
+      chartConfig = {
+        type: 'bar',
+        data: {
+          labels: labels.length > 0 ? labels : ['Nihil'],
+          datasets: [{
+            label: 'Frekuensi Pengulangan Kerusakan',
+            data: dataCounts.length > 0 ? dataCounts : [0],
+            backgroundColor: 'rgba(239, 68, 68, 0.8)',
+            borderColor: '#ef4444',
+            borderWidth: 1.5,
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: function (evt, elements) {
+            if (elements && elements.length > 0) {
+              var clickedIdx = elements[0].index;
+              activeRecurringIdx = (activeRecurringIdx === clickedIdx) ? null : clickedIdx;
+              renderRecurringFilteredTable();
+            }
+          },
+          scales: {
+            y: { ticks: { stepSize: 1, color: '#334155', font: { weight: '600', size: 11 } }, grid: { color: 'rgba(0,0,0,0.06)' } },
+            x: { ticks: { color: '#0f172a', font: { weight: '700', size: 10.5 }, maxRotation: 45, minRotation: 20 }, grid: { display: false } }
+          }
+        }
+      };
+
+      thead.innerHTML = '<tr><th style="width:45px; text-align:center;">NO</th><th>NOMOR UNIT</th><th>SISTEM ELEKTRIKAL BERULANG</th><th style="text-align:center;">FREKUENSI TERJADI</th><th style="text-align:center;">TOTAL DOWNTIME</th><th>RINCIAN KRONOLOGI KASUS TERAKHIR</th><th style="text-align:center;">STATUS EVALUASI</th></tr>';
+      renderRecurringFilteredTable();
+    }
+
+    if (typeof Chart !== 'undefined' && chartConfig) {
+      var ctx = document.getElementById('dashMetricCanvas').getContext('2d');
+      dashMetricChartInstance = new Chart(ctx, chartConfig);
+    }
+
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeDashboardMetricModal() {
+    var modal = document.getElementById('dashMetricChartModal');
+    if (modal) modal.classList.remove('active');
+    document.body.style.overflow = '';
+    if (dashMetricChartInstance) {
+      dashMetricChartInstance.destroy();
+      dashMetricChartInstance = null;
+    }
+  }
+
+  function handleApplyDashboardFilter() {
+    var btnApply = document.getElementById('btnApplyDashboardFilter');
+    if (btnApply && !btnApply.classList.contains('btn-applying')) {
+      btnApply.classList.add('btn-applying');
+      var originalBtnHtml = btnApply.innerHTML;
+      btnApply.innerHTML = '<svg class="spin-icon-dash" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Menerapkan...';
+      setTimeout(function () {
+        btnApply.classList.remove('btn-applying');
+        btnApply.classList.add('btn-applied-success');
+        btnApply.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Diterapkan';
+        setTimeout(function () {
+          btnApply.classList.remove('btn-applied-success');
+          btnApply.innerHTML = originalBtnHtml;
+        }, 500);
+      }, 250);
+    }
+    loadDashboardKPI();
+  }
+
+  function loadDashboardKPI(skipFetch) {
+    var selM = document.getElementById('dashMonth') ? document.getElementById('dashMonth').value : String(new Date().getMonth() + 1);
+    var selY = document.getElementById('dashYear') ? document.getElementById('dashYear').value : String(new Date().getFullYear());
+
+    // Ambil seluruh data jika belum tersedia lengkap di memori browser
+    if (!skipFetch && !window._isFetchingAllDashboardData) {
+      var needWorkReports = (!window.globalAllWorkReports || window.globalAllWorkReports.length === 0);
+      var needBattery = (!globalBatteryLogs || globalBatteryLogs.length === 0);
+      var needPM = (!globalPMLogs || globalPMLogs.length === 0);
+      var needInspection = (!globalInspectionLogs || globalInspectionLogs.length === 0);
+      var needBreakdown = (!globalBreakdownLogs || globalBreakdownLogs.length === 0);
+
+      if (needWorkReports || needBattery || needPM || needInspection || needBreakdown) {
+        window._isFetchingAllDashboardData = true;
+        if (typeof fetchAllDashboardData === 'function') {
+          fetchAllDashboardData(false, function () {
+            window._isFetchingAllDashboardData = false;
+            loadDashboardKPI(true);
+          });
+        }
+      }
+    }
+
+    var sourceReports = (typeof getDashboardSourceReports === 'function') ? getDashboardSourceReports() : (allFilteredReports || []);
+    var periodReports = sourceReports.filter(function (r) {
+      return isDateInSelectedPeriod(r.tanggal || r.timestamp, selM, selY);
+    });
+
+    var periodBreakdowns = (globalBreakdownLogs || []).filter(function (b) {
+      return isDateInSelectedPeriod(b.tanggal, selM, selY);
+    });
+
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      if (!globalBatteryLogs || globalBatteryLogs.length === 0) {
+        if (typeof getInitialBatteryLogsFallback === 'function') globalBatteryLogs = getInitialBatteryLogsFallback();
+      }
+      if (!globalInspectionLogs || globalInspectionLogs.length === 0) {
+        if (typeof getInitialInspectionLogsFallback === 'function') globalInspectionLogs = getInitialInspectionLogsFallback();
+      }
+    } else {
+      if ((!globalInspectionLogs || globalInspectionLogs.length === 0) && !window._hasFetchedInitialDashInsp) {
+        window._hasFetchedInitialDashInsp = true;
+        if (typeof fetchInspectionLogs === 'function') {
+          fetchInspectionLogs(false, function () {
+            if (typeof loadDashboardKPI === 'function') loadDashboardKPI();
+          });
+        }
+      }
+    }
+    var periodBatteryLogs = (globalBatteryLogs || []).filter(function (b) {
+      return isDateInSelectedPeriod(b.tanggal, selM, selY);
+    });
+
+    var periodPMLogs = (globalPMLogs || []).filter(function (p) {
+      return isDateInSelectedPeriod(p.tanggal, selM, selY);
+    });
+
+    var periodInspectionLogs = (globalInspectionLogs || []).filter(function (i) {
+      return isDateInSelectedPeriod(i.tanggal, selM, selY);
+    });
+
+    var totalReports = periodReports.length;
+    var totalDowntime = 0;
+    var replacePartCount = 0;
+    var catCount = {};
+    var unitDefectMap = {};
+
+    periodReports.forEach(function (r) {
+      var dt = parseFloat(r.downtimeJam) || 0;
+      totalDowntime += dt;
+
+      var sp = String(r.statusPart || '').toUpperCase();
+      if (sp === 'BAD' || sp === 'REPLACE' || sp === 'REPLACE PART') replacePartCount++;
+
+      var cat = (typeof normalizeCategoryName === 'function')
+        ? normalizeCategoryName(r.kategoriPekerjaan)
+        : String(r.kategoriPekerjaan || 'LAIN-LAIN').trim().toUpperCase();
+      if (!catCount[cat]) catCount[cat] = { cases: 0, dt: 0 };
+      catCount[cat].cases++;
+      catCount[cat].dt += dt;
+
+      var u = String(r.noUnit || '').trim().toUpperCase();
+      if (u && u !== '-') {
+        var key = u + '|||' + cat;
+        unitDefectMap[key] = (unitDefectMap[key] || 0) + 1;
+      }
+    });
+
+    var breakdownPartCount = 0;
+    var breakdownRepairCount = 0;
+    periodBreakdowns.forEach(function (b) {
+      var st = String(b.statusRepair || 'REPLACE').toUpperCase();
+      if (st === 'REPLACE' || st === 'WAITING PART') {
+        breakdownPartCount++;
+      } else if (st === 'REPAIR') {
+        breakdownRepairCount++;
+      }
+    });
+
+    var unitCount = (globalUnits && globalUnits.length > 0) ? globalUnits.length : 10;
+    var totalOpHours = unitCount * 30 * 24;
+    var paRaw = totalOpHours > 0 ? (((totalOpHours - totalDowntime) / totalOpHours) * 100) : 100;
+    if (paRaw < 0) paRaw = 0;
+    if (paRaw > 100) paRaw = 100;
+    var pa = (paRaw % 1 === 0 || paRaw >= 100) ? Math.round(paRaw).toString() : parseFloat(paRaw.toFixed(1)).toString();
+
+    var mttr = totalReports > 0 ? (totalDowntime / totalReports).toFixed(1) : '0.0';
+    // Standar KPI Tambang: Jika 0 kerusakan/breakdown, unit beroperasi penuh tanpa gangguan (720 Jam per armada)
+    var mtbf = totalReports > 0 ? (Math.round((totalOpHours - totalDowntime) / totalReports)).toString() : '720';
+
+    var uniquePartKeys = {};
+    periodReports.forEach(function (r) {
+      var sp = String(r.statusPart || '').toUpperCase();
+      if (sp === 'BAD' || sp === 'REPLACE' || sp === 'REPLACE PART') {
+        uniquePartKeys[(r.noUnit || '').trim().toUpperCase() + '_' + (r.tanggal || '').trim()] = true;
+      }
+    });
+    periodBreakdowns.forEach(function (b) {
+      var st = String(b.statusRepair || 'REPLACE').toUpperCase();
+      if (st === 'REPLACE' || st === 'WAITING PART') {
+        uniquePartKeys[(b.noUnit || '').trim().toUpperCase() + '_' + (b.tanggal || '').trim()] = true;
+      }
+    });
+
+    var totalGoodCases = breakdownRepairCount;
+    var totalPartCases = Object.keys(uniquePartKeys).length;
+    var totalSample = totalPartCases + totalGoodCases;
+
+    setMetricText('kpiPA', pa + '%');
+    setMetricText('kpiMTTR', mttr + ' Jam');
+    setMetricText('kpiMTBF', mtbf + ' Jam');
+    setMetricText('kpiReports', totalReports);
+    setMetricText('kpiBattery', periodBatteryLogs.length);
+    setMetricText('kpiPM', periodPMLogs.length);
+    setMetricText('kpiInspection', periodInspectionLogs.length);
+    setMetricText('kpiPartRatio', totalPartCases + ' Kasus');
+
+    // Peringkat Pareto: Kasus Terbanyak -> Akumulasi Jam Downtime Terbesar (Tie-break presisi)
+    var sortedCatsKPI = Object.keys(catCount).sort(function (a, b) {
+      if (catCount[b].cases !== catCount[a].cases) {
+        return catCount[b].cases - catCount[a].cases;
+      }
+      return catCount[b].dt - catCount[a].dt;
+    });
+
+    var topCatName = sortedCatsKPI.length > 0 ? sortedCatsKPI[0] : '-';
+    var topCatCases = sortedCatsKPI.length > 0 ? catCount[topCatName].cases : 0;
+    var topCatDisplay = topCatCases > 0 ? (topCatName + ' (' + topCatCases + ')') : '-';
+    var elTopCat = document.getElementById('dashCardTopCategory');
+    if (elTopCat) elTopCat.textContent = topCatDisplay;
+
+    var uniqueSystems = Object.keys(catCount).length;
+    var elSys = document.getElementById('dashCardMatrixSystem');
+    if (elSys) elSys.textContent = uniqueSystems + ' Sistem';
+
+    var recurringCases = 0;
+    for (var k in unitDefectMap) {
+      if (unitDefectMap[k] > 1) recurringCases++;
+    }
+    var elRec = document.getElementById('dashCardMatrixRecurring');
+    if (elRec) elRec.textContent = recurringCases + ' Kasus';
+
+    if (typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getDashboardMetrics === 'function') {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && res.metrics) {
+            var curBat = parseInt(document.getElementById('dashCardBattery') ? document.getElementById('dashCardBattery').textContent : '0', 10);
+            if (typeof res.metrics.totalBattery === 'number' && (isNaN(curBat) || res.metrics.totalBattery > curBat)) {
+              setMetricText('kpiBattery', res.metrics.totalBattery);
+            }
+            var curPM = parseInt(document.getElementById('dashCardPM') ? document.getElementById('dashCardPM').textContent : '0', 10);
+            if (typeof res.metrics.totalPM === 'number' && (isNaN(curPM) || res.metrics.totalPM > curPM)) {
+              setMetricText('kpiPM', res.metrics.totalPM);
+            }
+            var curInsp = parseInt(document.getElementById('dashCardInspection') ? document.getElementById('dashCardInspection').textContent : '0', 10);
+            if (typeof res.metrics.totalInspection === 'number' && (isNaN(curInsp) || res.metrics.totalInspection > curInsp)) {
+              setMetricText('kpiInspection', res.metrics.totalInspection);
+            }
+            var curRep = parseInt(document.getElementById('dashCardTotalJobs') ? document.getElementById('dashCardTotalJobs').textContent : '0', 10);
+            if (typeof res.metrics.totalReports === 'number' && (isNaN(curRep) || res.metrics.totalReports > curRep)) {
+              setMetricText('kpiReports', res.metrics.totalReports);
+            }
+            // kpiPartRatio dikalkulasi presisi di layer client agar selaras dengan data real Report Pekerjaan & Analisa Kerusakan
+          }
+        })
+        .withFailureHandler(function () {
+          // Tetap gunakan hasil filter presisi di layer client
+        })
+        .getDashboardMetrics(selM, selY);
+    }
+  }
+
+  function updateDashboardPMMetrics() {
+    var selM = document.getElementById('dashMonth') ? document.getElementById('dashMonth').value : String(new Date().getMonth() + 1);
+    var selY = document.getElementById('dashYear') ? document.getElementById('dashYear').value : String(new Date().getFullYear());
+    var periodPM = (globalPMLogs || []).filter(function (p) {
+      return (typeof isDateInSelectedPeriod === 'function')
+        ? isDateInSelectedPeriod(p.tanggal, selM, selY)
+        : true;
+    });
+    var count = periodPM.length;
+    setMetricText('kpiPM', count);
+    var badgeEl = document.getElementById('dashMetricModalBadge');
+    if (badgeEl && currentActiveMetricType === 'pm') {
+      badgeEl.textContent = count + ' SERVIS PM';
+    }
+    var elPdfPM = document.getElementById('dashPdfPM');
+    if (elPdfPM) elPdfPM.textContent = count;
+  }
+  window.updateDashboardPMMetrics = updateDashboardPMMetrics;
+
+  /**
+   * FITUR CETAK REKAPITULASI DASHBOARD (BULANAN / TAHUNAN)
+   * Dilengkapi penguncian koordinat kanvas absolut anti-shift (Desktop & Mobile)
+   */
+  function downloadDashboardReportPDF() {
+    var btn = document.getElementById('btnDownloadDashPdf');
+    var origBtnHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<svg class="spin-icon-dash" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Menyiapkan PDF...';
+    }
+
+    function restoreBtnUI(isSuccess) {
+      if (!btn) return;
+      if (isSuccess) {
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Selesai';
+        setTimeout(function () {
+          btn.disabled = false;
+          btn.innerHTML = origBtnHtml;
+        }, 600);
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = origBtnHtml;
+      }
+    }
+
+    var periodTypeEl = document.getElementById('dashPrintPeriodType');
+    var isYearly = periodTypeEl ? (periodTypeEl.value === 'yearly') : false;
+
+    var selM = document.getElementById('dashMonth') ? document.getElementById('dashMonth').value : String(new Date().getMonth() + 1);
+    var selY = document.getElementById('dashYear') ? document.getElementById('dashYear').value : String(new Date().getFullYear());
+
+    var isAllM = (selM === 'all' || selM === 'ALL' || !selM);
+    var isAllY = (selY === 'all' || selY === 'ALL' || !selY);
+    var monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    var mInt = parseInt(selM, 10);
+    var mText = (!isAllM && mInt >= 1 && mInt <= 12) ? monthNames[mInt - 1] : 'Semua Bulan';
+
+    var periodLabel = isYearly
+      ? ('Tahun ' + selY + ' (Januari - Desember)')
+      : (isAllM && isAllY ? 'Seluruh Periode (Kumulatif)' : (isAllM ? ('Semua Bulan ' + selY) : (isAllY ? (mText + ' (Semua Tahun)') : (mText + ' ' + selY))));
+
+    var printDateStr = formatDateDDMMYYYY(new Date());
+
+    if (typeof showPdfRenderOverlay === 'function') {
+      showPdfRenderOverlay('Menyiapkan Rekapitulasi...', 'Sedang merender laporan rekapitulasi maintenance resolusi tinggi...');
+    }
+
+    if (typeof syncCompanyLogoDisplay === 'function') {
+      syncCompanyLogoDisplay();
+    }
+
+    function matchPeriod(dateStr) {
+      if (!dateStr) return false;
+      if (isYearly) {
+        return isDateInSelectedPeriod(dateStr, 'all', selY);
+      }
+      return isDateInSelectedPeriod(dateStr, selM, selY);
+    }
+
+    var sourceReportsPdf = (typeof getDashboardSourceReports === 'function') ? getDashboardSourceReports() : (allFilteredReports || []);
+    var periodReports = sourceReportsPdf.filter(function (r) {
+      return matchPeriod(r.tanggal);
+    });
+
+    var totalReports = periodReports.length;
+    var totalDowntime = 0;
+    var replacePartCount = 0;
+    var catCount = {};
+    var unitDefectMap = {};
+
+    periodReports.forEach(function (r) {
+      var dt = parseFloat(r.downtimeJam) || 0;
+      totalDowntime += dt;
+
+      var sp = String(r.statusPart || '').toUpperCase();
+      if (sp === 'BAD' || sp === 'REPLACE' || sp === 'REPLACE PART') replacePartCount++;
+
+      var cat = (typeof normalizeCategoryName === 'function')
+        ? normalizeCategoryName(r.kategoriPekerjaan)
+        : String(r.kategoriPekerjaan || 'LAIN-LAIN').trim().toUpperCase();
+      if (!catCount[cat]) catCount[cat] = { cases: 0, dt: 0 };
+      catCount[cat].cases++;
+      catCount[cat].dt += dt;
+
+      var u = String(r.noUnit || '').trim().toUpperCase();
+      if (u && u !== '-') {
+        var key = u + '|||' + cat;
+        if (!unitDefectMap[key]) unitDefectMap[key] = { noUnit: u, kategori: cat, count: 0, dt: 0 };
+        unitDefectMap[key].count++;
+        unitDefectMap[key].dt += dt;
+      }
+    });
+
+    var breakdownPartCount = 0;
+    var breakdownRepairCount = 0;
+    (globalBreakdownLogs || []).forEach(function (b) {
+      if (matchPeriod(b.tanggal)) {
+        var st = String(b.statusRepair || 'REPLACE').toUpperCase();
+        if (st === 'REPLACE' || st === 'WAITING PART') {
+          breakdownPartCount++;
+        } else if (st === 'REPAIR') {
+          breakdownRepairCount++;
+        }
+      }
+    });
+
+    var periodBatteryCount = (globalBatteryLogs || []).filter(function (b) { return matchPeriod(b.tanggal); }).length;
+    if (periodBatteryCount === 0 && globalBatteryLogs && globalBatteryLogs.length > 0) periodBatteryCount = globalBatteryLogs.length;
+    var periodPMCount = (globalPMLogs || []).filter(function (p) { return matchPeriod(p.tanggal); }).length;
+    if (periodPMCount === 0 && globalPMLogs && globalPMLogs.length > 0) periodPMCount = globalPMLogs.length;
+    var periodInspCount = (globalInspectionLogs || []).filter(function (i) { return matchPeriod(i.tanggal); }).length;
+    if (periodInspCount === 0 && globalInspectionLogs && globalInspectionLogs.length > 0) periodInspCount = globalInspectionLogs.length;
+
+    var unitCount = (globalUnits && globalUnits.length > 0) ? globalUnits.length : 10;
+    var operatingDays = isYearly ? 365 : 30;
+    var totalOpHours = unitCount * operatingDays * 24;
+
+    var paRaw = totalOpHours > 0 ? (((totalOpHours - totalDowntime) / totalOpHours) * 100) : 100;
+    if (paRaw < 0) paRaw = 0;
+    if (paRaw > 100) paRaw = 100;
+    var paVal = (paRaw % 1 === 0 || paRaw >= 100) ? Math.round(paRaw).toString() : parseFloat(paRaw.toFixed(1)).toString();
+
+    var mttrVal = totalReports > 0 ? (totalDowntime / totalReports).toFixed(1) : '0.0';
+    var mtbfVal = totalReports > 0 ? Math.round(totalOpHours / totalReports).toString() : '0';
+
+    var uniquePartKeysPdf = {};
+    sourceReportsPdf.forEach(function (r) {
+      if (matchPeriod(r.tanggal)) {
+        var sp = String(r.statusPart || '').toUpperCase();
+        if (sp === 'BAD' || sp === 'REPLACE' || sp === 'REPLACE PART') {
+          uniquePartKeysPdf[(r.noUnit || '').trim().toUpperCase() + '_' + (r.tanggal || '').trim()] = true;
+        }
+      }
+    });
+    (globalBreakdownLogs || []).forEach(function (b) {
+      if (matchPeriod(b.tanggal)) {
+        var st = String(b.statusRepair || 'REPLACE').toUpperCase();
+        if (st === 'REPLACE' || st === 'WAITING PART') {
+          uniquePartKeysPdf[(b.noUnit || '').trim().toUpperCase() + '_' + (b.tanggal || '').trim()] = true;
+        }
+      }
+    });
+
+    var totalGoodCases = breakdownRepairCount;
+    var totalPartCases = Object.keys(uniquePartKeysPdf).length;
+    var totalSample = totalPartCases + totalGoodCases;
+
+    // Peringkat Pareto PDF: Kasus Terbanyak -> Akumulasi Jam Downtime Terbesar
+    var sortedCats = Object.keys(catCount).sort(function (a, b) {
+      if (catCount[b].cases !== catCount[a].cases) {
+        return catCount[b].cases - catCount[a].cases;
+      }
+      return catCount[b].dt - catCount[a].dt;
+    });
+    var topCatName = sortedCats.length > 0 ? sortedCats[0] : '-';
+    var topCatCases = sortedCats.length > 0 ? catCount[topCatName].cases : 0;
+    var topCatDisplay = topCatCases > 0 ? (topCatName + ' (' + topCatCases + ' Kasus)') : '-';
+
+    var uniqueSystems = Object.keys(catCount).length;
+
+    var recurringList = Object.keys(unitDefectMap).map(function (k) { return unitDefectMap[k]; }).filter(function (x) { return x.count > 1; });
+    var totalRecurringCases = recurringList.reduce(function (acc, x) { return acc + (x.count - 1); }, 0);
+
+    document.getElementById('dashPdfPeriodLabel').textContent = periodLabel;
+    document.getElementById('dashPdfPrintDate').textContent = printDateStr;
+
+    document.getElementById('dashPdfPA').textContent = paVal + '%';
+    document.getElementById('dashPdfMTTR').textContent = mttrVal + ' Jam';
+    document.getElementById('dashPdfMTBF').textContent = mtbfVal + ' Jam';
+    document.getElementById('dashPdfReports').textContent = totalReports;
+    document.getElementById('dashPdfBattery').textContent = periodBatteryCount;
+    document.getElementById('dashPdfPM').textContent = periodPMCount;
+    document.getElementById('dashPdfInspection').textContent = periodInspCount;
+    document.getElementById('dashPdfPartRatio').textContent = totalPartCases + ' Kasus';
+
+    document.getElementById('dashPdfTopCategory').textContent = topCatDisplay;
+    document.getElementById('dashPdfMatrixSystem').textContent = uniqueSystems + ' Sistem';
+    document.getElementById('dashPdfMatrixRecurring').textContent = totalRecurringCases + ' Kasus';
+
+    var tbodyCat = document.getElementById('dashPdfCategoryTbody');
+    if (tbodyCat) {
+      tbodyCat.innerHTML = '';
+      if (sortedCats.length === 0) {
+        tbodyCat.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 10px; color: #94a3b8;">Belum ada intervensi kerusakan sistem pada periode ini.</td></tr>';
+      } else {
+        sortedCats.forEach(function (cName, idx) {
+          var item = catCount[cName];
+          var mttrCat = item.cases > 0 ? (item.dt / item.cases).toFixed(1) : '0.0';
+          var pctCases = totalReports > 0 ? ((item.cases / totalReports) * 100).toFixed(1) : '0.0';
+
+          tbodyCat.innerHTML += '<tr style="border-bottom: 1px solid #cbd5e1;">' +
+            '<td style="padding: 5px 6px; text-align: center; color: #64748b;">' + (idx + 1) + '</td>' +
+            '<td style="padding: 5px 8px; font-weight: 700; color: #0f172a;">' + escapeHtml(cName) + '</td>' +
+            '<td style="padding: 5px 8px; text-align: center; font-weight: 700;">' + item.cases + ' Kasus</td>' +
+            '<td style="padding: 5px 8px; text-align: center;">' + item.dt.toFixed(1) + ' Jam</td>' +
+            '<td style="padding: 5px 8px; text-align: center;">' + mttrCat + ' Jam</td>' +
+            '<td style="padding: 5px 8px; text-align: center; font-weight: 700; color: #d97706;">' + pctCases + '%</td>' +
+            '</tr>';
+        });
+      }
+    }
+
+    var tbodyRec = document.getElementById('dashPdfRecurringTbody');
+    if (tbodyRec) {
+      tbodyRec.innerHTML = '';
+      if (recurringList.length === 0) {
+        tbodyRec.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 10px; color: #059669; font-weight: 700;">✅ Nihil: Tidak ditemukan kerusakan berulang pada sistem yang sama di periode ini.</td></tr>';
+      } else {
+        recurringList.forEach(function (recItem, idx) {
+          tbodyRec.innerHTML += '<tr style="border-bottom: 1px solid #cbd5e1;">' +
+            '<td style="padding: 5px 6px; text-align: center; color: #64748b;">' + (idx + 1) + '</td>' +
+            '<td style="padding: 5px 8px; font-weight: 800; color: #0f172a;">' + escapeHtml(recItem.noUnit) + '</td>' +
+            '<td style="padding: 5px 8px; font-weight: 700; color: #d97706;">' + escapeHtml(recItem.kategori) + '</td>' +
+            '<td style="padding: 5px 8px; text-align: center; font-weight: 800; color: #dc2626;">' + recItem.count + ' Kali</td>' +
+            '<td style="padding: 5px 8px; text-align: center;">' + recItem.dt.toFixed(1) + ' Jam</td>' +
+            '<td style="padding: 5px 8px; text-align: center; font-weight: 700; font-size: 8.5px; color: #dc2626;">INVESTIGASI RCFA / FAR</td>' +
+            '</tr>';
+        });
+      }
+    }
+
+    var template = document.getElementById('dashboardPrintTemplate');
+    if (!template) {
+      if (typeof hidePdfRenderOverlay === 'function') hidePdfRenderOverlay();
+      restoreBtnUI(false);
+      showToast('Template cetak dashboard tidak ditemukan!', 'error');
+      return;
+    }
+
+    // Isolated In-Flow Host: Rendisi kanvas stabil, 100% presisi A4, tertutup rapi oleh rendering overlay
+    var host = document.createElement('div');
+    host.id = 'dashPdfCaptureHost';
+    host.style.cssText = 'position: fixed; left: 0; top: 0; width: 720px; min-width: 720px; max-width: 720px; height: auto; z-index: 1000; background: #ffffff; margin: 0; padding: 0; box-sizing: border-box; overflow: visible; pointer-events: none;';
+
+    var clone = template.cloneNode(true);
+    clone.id = 'dashActivePrintTargetNode';
+    clone.classList.add('pdf-print-template-root');
+    clone.style.cssText = 'display: block !important; position: relative !important; width: 720px !important; min-width: 720px !important; max-width: 720px !important; margin: 0 !important; left: 0 !important; background: #ffffff !important; opacity: 1 !important; visibility: visible !important; box-sizing: border-box !important;';
+
+    host.appendChild(clone);
+    document.body.appendChild(host);
+
+    var isCleaned = false;
+    function cleanupHost() {
+      if (isCleaned) return;
+      isCleaned = true;
+      if (typeof hidePdfRenderOverlay === 'function') {
+        hidePdfRenderOverlay();
+      }
+      if (host && host.parentNode) {
+        host.parentNode.removeChild(host);
+      }
+    }
+
+    var safetyTimer = setTimeout(function () {
+      if (!isCleaned) {
+        cleanupHost();
+        restoreBtnUI(false);
+        showToast('Waktu proses cetak Dashboard habis.', 'error');
+      }
+    }, 15000);
+
+    waitForImagesLoaded(clone, function () {
+      setTimeout(function () {
+        if (typeof window.scrollTo === 'function') {
+          window.scrollTo(0, 0);
+        }
+        var fileSuffix = isYearly ? ('TAHUNAN_' + selY) : ('BULANAN_' + selY + '_' + ('0' + selM).slice(-2));
+        var opt = {
+          margin: [8, 8, 8, 8],
+          filename: 'REKAP_DASHBOARD_AE_' + fileSuffix + '_' + new Date().toISOString().slice(0, 10) + '.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 3,
+            dpi: 300,
+            letterRendering: true,
+            useCORS: true,
+            allowTaint: false,
+            scrollY: 0,
+            scrollX: 0,
+            x: 0,
+            y: 0,
+            windowWidth: 720,
+            backgroundColor: '#ffffff',
+            logging: false
+          },
+          pagebreak: {
+            mode: ['avoid-all', 'css', 'legacy'],
+            avoid: ['tr', 'table', '.far-signature-table', '.pdf-avoid-break', 'img']
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
+        };
+
+        try {
+          if (typeof html2pdf !== 'undefined') {
+            html2pdf().set(opt).from(clone).save().then(function () {
+              clearTimeout(safetyTimer);
+              cleanupHost();
+              restoreBtnUI(true);
+            }).catch(function (err) {
+              clearTimeout(safetyTimer);
+              cleanupHost();
+              restoreBtnUI(false);
+              showToast('Gagal mencetak PDF Dashboard: ' + err.message, 'error');
+            });
+          } else {
+            clearTimeout(safetyTimer);
+            cleanupHost();
+            restoreBtnUI(false);
+            showToast('Library html2pdf belum siap dimuat.', 'error');
+          }
+        } catch (execErr) {
+          clearTimeout(safetyTimer);
+          cleanupHost();
+          restoreBtnUI(false);
+          showToast('Terjadi kendala saat memproses PDF: ' + execErr.message, 'error');
+        }
+      }, 150);
+    });
+  }
+
+  /**
+   * FITUR CETAK DOKUMEN ANALISIS METRIK KHUSUS (11 KARTU METRIK) + GRAFIK LOSSLESS & TABEL KASUS
+   * Dilengkapi penguncian koordinat kanvas absolut anti-shift (Desktop & Mobile)
+   */
+  function downloadMetricModalPDF() {
+    var btn = document.getElementById('btnDownloadMetricModalPdf');
+    var origBtnHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<svg class="spin-icon-dash" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Mengunduh PDF...';
+    }
+
+    function restoreBtnUI(isSuccess) {
+      if (!btn) return;
+      if (isSuccess) {
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Selesai';
+        setTimeout(function () {
+          btn.disabled = false;
+          btn.innerHTML = origBtnHtml;
+        }, 600);
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = origBtnHtml;
+      }
+    }
+
+    if (typeof showPdfRenderOverlay === 'function') {
+      showPdfRenderOverlay('Menyiapkan Analisis Metrik...', 'Sedang merender laporan analisis metrik & grafik resolusi tinggi...');
+    }
+
+    var printTemplate = document.getElementById('metricSinglePrintTemplate');
+    if (!printTemplate) {
+      if (typeof hidePdfRenderOverlay === 'function') hidePdfRenderOverlay();
+      restoreBtnUI(false);
+      showToast('Template cetak analisis metrik tidak ditemukan!', 'error');
+      return;
+    }
+
+    var selM = document.getElementById('dashMonth') ? parseInt(document.getElementById('dashMonth').value, 10) : (new Date().getMonth() + 1);
+    var selY = document.getElementById('dashYear') ? parseInt(document.getElementById('dashYear').value, 10) : new Date().getFullYear();
+    var monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    var periodLabel = monthNames[selM - 1] + ' ' + selY;
+
+    var printDateStr = formatDateDDMMYYYY(new Date());
+
+    // 1. Sinkronisasi Logo Kop Surat
+    var metricPdfLogo = document.getElementById('metricPdfCompanyLogo');
+    var logoUrl = localStorage.getItem('AE_COMPANY_LOGO_URL') || '';
+    if (metricPdfLogo && logoUrl) {
+      metricPdfLogo.src = (typeof getDirectDriveImageUrl === 'function') ? getDirectDriveImageUrl(logoUrl) : logoUrl;
+      metricPdfLogo.style.display = 'block';
+    } else if (metricPdfLogo) {
+      metricPdfLogo.style.display = 'none';
+    }
+
+    // 2. Salin Judul, Parameter, dan Badge dari Modal Aktif
+    var modalTitleEl = document.getElementById('dashMetricModalTitle');
+    var modalSubEl = document.getElementById('dashMetricModalSubtitle');
+    var modalBadgeEl = document.getElementById('dashMetricModalBadge');
+    var modalStatBar = document.getElementById('dashMetricModalStatBar');
+
+    var pdfMainTitle = document.getElementById('metricPdfMainTitle');
+    var pdfSubTitle = document.getElementById('metricPdfSubTitle');
+    var pdfPeriod = document.getElementById('metricPdfPeriodLabel');
+    var pdfDate = document.getElementById('metricPdfPrintDate');
+    var pdfBadge = document.getElementById('metricPdfBadge');
+    var pdfStatBar = document.getElementById('metricPdfStatBar');
+
+    if (pdfMainTitle) pdfMainTitle.textContent = modalTitleEl ? modalTitleEl.textContent : 'LAPORAN ANALISIS METRIK KELISTRIKAN';
+    if (pdfSubTitle) pdfSubTitle.textContent = modalSubEl ? modalSubEl.textContent : 'Electrical Diagnostic & Performance Metric Report';
+    if (pdfPeriod) pdfPeriod.textContent = periodLabel;
+    if (pdfDate) pdfDate.textContent = printDateStr;
+    if (pdfBadge) pdfBadge.textContent = modalBadgeEl ? modalBadgeEl.textContent : '-';
+
+    // Salin Baris Statistik Cepat dengan pembersihan warna putih kontras
+    if (pdfStatBar && modalStatBar) {
+      var cleanStatHtml = (modalStatBar.innerHTML || '')
+        .replace(/color:\s*#ffffff/gi, 'color: #0f172a')
+        .replace(/color:\s*#fff/gi, 'color: #0f172a');
+      pdfStatBar.innerHTML = cleanStatHtml;
+    }
+
+    // 3. Salin Judul Heading Grafik
+    var modalChartHead = document.getElementById('dashMetricChartHeading');
+    var modalChartNote = document.getElementById('dashMetricChartSubnote');
+    var pdfChartHead = document.getElementById('metricPdfChartHeading');
+    var pdfChartNote = document.getElementById('metricPdfChartSubnote');
+
+    if (pdfChartHead && modalChartHead) pdfChartHead.textContent = modalChartHead.textContent;
+    if (pdfChartNote && modalChartNote) pdfChartNote.textContent = modalChartNote.textContent;
+
+    // 4. Ekstrak Visualisasi Grafik Chart.js ke Gambar Lossless Super Jernih (PNG)
+    var chartImg = document.getElementById('metricPdfChartImg');
+    var chartCanvas = document.getElementById('dashMetricCanvas');
+    if (chartImg && (dashMetricChartInstance || chartCanvas)) {
+      try {
+        var dataUrl = dashMetricChartInstance ? dashMetricChartInstance.toBase64Image('image/png', 1.0) : chartCanvas.toDataURL('image/png', 1.0);
+        chartImg.src = dataUrl;
+        chartImg.style.display = 'block';
+      } catch (e) {
+        console.warn('Gagal ekstrak chart ke gambar:', e);
+      }
+    }
+
+    // 5. Salin Tabel Matriks Kasus Lengkap dengan Penyesuaian Kontras Gelap di Latar Putih
+    var modalTableHead = document.getElementById('dashMetricTableHeading');
+    var pdfTableHead = document.getElementById('metricPdfTableHeading');
+    if (pdfTableHead && modalTableHead) pdfTableHead.textContent = modalTableHead.textContent;
+
+    var modalThead = document.getElementById('dashMetricTableThead');
+    var modalTbody = document.getElementById('dashMetricTableTbody');
+    var pdfThead = document.getElementById('metricPdfTableThead');
+    var pdfTbody = document.getElementById('metricPdfTableTbody');
+
+    if (pdfThead && modalThead) {
+      pdfThead.innerHTML = modalThead.innerHTML;
+    }
+    if (pdfTbody && modalTbody) {
+      var cleanTbodyHtml = (modalTbody.innerHTML || '')
+        .replace(/color:\s*#ffffff/gi, 'color: #0f172a')
+        .replace(/color:\s*#fff/gi, 'color: #0f172a')
+        .replace(/color:\s*rgb\(255,\s*255,\s*255\)/gi, 'color: #0f172a');
+      pdfTbody.innerHTML = cleanTbodyHtml;
+    }
+
+    // Isolated In-Flow Host: Rendisi kanvas stabil, 100% presisi A4, tertutup rapi oleh rendering overlay
+    var host = document.createElement('div');
+    host.id = 'metricPdfCaptureHost';
+    host.style.cssText = 'position: fixed; left: 0; top: 0; width: 720px; min-width: 720px; max-width: 720px; height: auto; z-index: 1000; background: #ffffff; margin: 0; padding: 0; box-sizing: border-box; overflow: visible; pointer-events: none;';
+
+    var clone = printTemplate.cloneNode(true);
+    clone.id = 'metricActivePrintTargetNode';
+    clone.classList.add('pdf-print-template-root');
+    clone.style.cssText = 'display: block !important; position: relative !important; width: 720px !important; min-width: 720px !important; max-width: 720px !important; margin: 0 !important; left: 0 !important; background: #ffffff !important; opacity: 1 !important; visibility: visible !important; box-sizing: border-box !important;';
+
+    host.appendChild(clone);
+    document.body.appendChild(host);
+
+    var metricNameClean = (currentActiveMetricType || 'METRIK').toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+
+    var isCleaned = false;
+    function cleanupHost() {
+      if (isCleaned) return;
+      isCleaned = true;
+      if (typeof hidePdfRenderOverlay === 'function') {
+        hidePdfRenderOverlay();
+      }
+      if (host && host.parentNode) {
+        host.parentNode.removeChild(host);
+      }
+    }
+
+    var safetyTimer = setTimeout(function () {
+      if (!isCleaned) {
+        cleanupHost();
+        restoreBtnUI(false);
+        showToast('Waktu proses cetak PDF Metrik habis.', 'error');
+      }
+    }, 15000);
+
+    waitForImagesLoaded(clone, function () {
+      setTimeout(function () {
+        if (typeof window.scrollTo === 'function') {
+          window.scrollTo(0, 0);
+        }
+        var opt = {
+          margin: [8, 8, 8, 8],
+          filename: 'ANALISIS_METRIK_' + metricNameClean + '_' + selY + '_' + ('0' + selM).slice(-2) + '_' + new Date().toISOString().slice(0, 10) + '.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 3,
+            dpi: 300,
+            letterRendering: true,
+            useCORS: true,
+            allowTaint: false,
+            scrollY: 0,
+            scrollX: 0,
+            x: 0,
+            y: 0,
+            windowWidth: 720,
+            backgroundColor: '#ffffff',
+            logging: false
+          },
+          pagebreak: {
+            mode: ['avoid-all', 'css', 'legacy'],
+            avoid: ['tr', 'table', '.far-signature-table', '.pdf-avoid-break', 'img']
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
+        };
+
+        try {
+          if (typeof html2pdf !== 'undefined') {
+            html2pdf().set(opt).from(clone).save().then(function () {
+              clearTimeout(safetyTimer);
+              cleanupHost();
+              restoreBtnUI(true);
+            }).catch(function (err) {
+              clearTimeout(safetyTimer);
+              cleanupHost();
+              restoreBtnUI(false);
+              showToast('Gagal mencetak PDF Metrik: ' + err.message, 'error');
+            });
+          } else {
+            clearTimeout(safetyTimer);
+            cleanupHost();
+            restoreBtnUI(false);
+            showToast('Library html2pdf belum siap dimuat.', 'error');
+          }
+        } catch (execErr) {
+          clearTimeout(safetyTimer);
+          cleanupHost();
+          restoreBtnUI(false);
+          showToast('Terjadi kendala saat memproses PDF Metrik: ' + execErr.message, 'error');
+        }
+      }, 150);
+    });
+  }
+</script>

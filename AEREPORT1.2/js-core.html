@@ -1,0 +1,1009 @@
+<script>
+  /**
+   * ============================================================================
+   * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+   * File: js-core.html (State Global, Engine Multi-Photo, Utility, & Lifecycle)
+   * ============================================================================
+   */
+
+  var globalUnits = [];
+  var globalCategories = [];
+  var globalMechanics = [];
+  var globalLocations = [];
+  var globalParts = [];
+  var globalBreakdownLogs = [];
+  var allFilteredReports = [];
+  var globalAllWorkReports = [];
+  var globalProductivityData = [];
+  var globalPMScheduleData = [];
+
+  /**
+   * Helper Universal: Ekstraksi Komponen Tanggal (Tahun, Bulan, Hari) Super Tangguh
+   * Kebal terhadap:
+   * - Format YYYY-MM-DD, YYYY/MM/DD, DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
+   * - Format dengan jam/waktu: '25/10/2026 14:00', '2026-10-25 16:22:38'
+   * - Format ISO 8601: '2026-10-25T08:54:14.378762+00:00'
+   * - Format teks bahasa Indonesia: '29 Oktober 2026', '25 Okt 2026', 'Minggu, 25-10-2026'
+   * - Tahun 2-digit: '25/10/26' -> 2026
+   * - Objek Date JS asli
+   */
+  function parseDateComponents(dateStr) {
+    if (!dateStr) return null;
+    if (dateStr instanceof Date) {
+      if (isNaN(dateStr.getTime())) return null;
+      return { year: dateStr.getFullYear(), month: dateStr.getMonth() + 1, day: dateStr.getDate() };
+    }
+
+    var str = String(dateStr).trim();
+    if (!str || str === '-' || str === 'undefined' || str === 'null') return null;
+
+    // Bersihkan nama hari jika ada (contoh: 'Minggu, 25-10-2026' -> '25-10-2026')
+    str = str.replace(/^[a-zA-Z]+,\s*/, '');
+
+    // Kamus nama bulan Indonesia & Inggris
+    var monthMap = {
+      'jan': 1, 'januari': 1, 'january': 1,
+      'feb': 2, 'februari': 2, 'february': 2,
+      'mar': 3, 'maret': 3, 'march': 3,
+      'apr': 4, 'april': 4,
+      'mei': 5, 'may': 5,
+      'jun': 6, 'juni': 6, 'june': 6,
+      'jul': 7, 'juli': 7, 'july': 7,
+      'agu': 8, 'agust': 8, 'agustus': 8, 'aug': 8, 'august': 8,
+      'sep': 9, 'sept': 9, 'september': 9,
+      'okt': 10, 'oktober': 10, 'oct': 10, 'october': 10,
+      'nov': 11, 'november': 11,
+      'des': 12, 'desember': 12, 'dec': 12, 'december': 12
+    };
+
+    // Deteksi jika menggunakan nama bulan teks (contoh: '29 Oktober 2026' atau '29-Okt-2026')
+    var textMonthMatch = str.match(/(\d{1,2})[\s\-_/]+([a-zA-Z]+)[\s\-_/]+(\d{2,4})/);
+    if (textMonthMatch) {
+      var dTxt = parseInt(textMonthMatch[1], 10);
+      var mKey = textMonthMatch[2].toLowerCase();
+      var yTxt = parseInt(textMonthMatch[3], 10);
+      if (yTxt < 100) yTxt = 2000 + yTxt;
+      if (monthMap[mKey]) {
+        return { year: yTxt, month: monthMap[mKey], day: dTxt };
+      }
+    }
+
+    // Ambil hanya bagian tanggal (abaikan waktu/jam/timestamp jika ada)
+    var dateOnly = str.split(/[T\s]/)[0];
+    var parts = dateOnly.split(/[-/.]/);
+
+    if (parts.length >= 3) {
+      var p0 = parseInt(parts[0], 10);
+      var p1 = parseInt(parts[1], 10);
+      var p2 = parseInt(parts[2], 10);
+
+      // Kasus YYYY-MM-DD
+      if (parts[0].length === 4) {
+        return { year: p0, month: p1, day: p2 };
+      }
+      // Kasus DD-MM-YYYY
+      if (parts[2].length === 4) {
+        return { year: p2, month: p1, day: p0 };
+      }
+      // Kasus DD-MM-YY (2 digit tahun)
+      if (parts[2].length === 2) {
+        return { year: 2000 + p2, month: p1, day: p0 };
+      }
+    }
+
+    // Fallback Date parser standar
+    var d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+    }
+
+    return null;
+  }
+  window.parseDateComponents = parseDateComponents;
+
+  /**
+   * Helper Universal: Pengecekan Tanggal terhadap Periode Bulan & Tahun Terpilih
+   * Mendukung format DD/MM/YYYY, ISO, teks bulan Indonesia, serta targetMonth = 'all' dan targetYear = 'all'
+   */
+  function isDateInSelectedPeriod(dateStr, targetMonth, targetYear) {
+    if (!dateStr) return false;
+    var parsed = parseDateComponents(dateStr);
+    if (!parsed) return false;
+
+    var isAllMonth = (targetMonth === 'all' || targetMonth === 'ALL' || targetMonth === '' || targetMonth === null || typeof targetMonth === 'undefined');
+    var isAllYear = (targetYear === 'all' || targetYear === 'ALL' || targetYear === '' || targetYear === null || typeof targetYear === 'undefined');
+
+    var tM = isAllMonth ? null : parseInt(targetMonth, 10);
+    var tY = isAllYear ? null : parseInt(targetYear, 10);
+
+    if (!isAllMonth && (isNaN(tM) || tM <= 0)) isAllMonth = true;
+    if (!isAllYear && (isNaN(tY) || tY <= 0)) isAllYear = true;
+
+    if (!isAllYear && parsed.year !== tY) return false;
+    if (!isAllMonth && parsed.month !== tM) return false;
+    return true;
+  }
+  window.isDateInSelectedPeriod = isDateInSelectedPeriod;
+
+  function getInitialPMLogsFallback() {
+    return [];
+  }
+
+  function getInitialBatteryLogsFallback() {
+    return [
+      // Oktober 2026
+      { tanggal: '14/10/2026', noUnit: 'ADT4173', merkBaterai: 'GS YUASA HD', voltase: '25.6', cca: '950', ir: '2.1', kondisiFisik: 'BERSIH & TERAWAT', statusGanti: 'MASIH LAYAK', mekanik: 'AGUS', catatan: 'Tegangan prima, terminal kencang.' },
+      { tanggal: '12/10/2026', noUnit: 'ADT4174', merkBaterai: 'INCOE GOLD', voltase: '24.8', cca: '880', ir: '3.4', kondisiFisik: 'KUTUB BERKERAK', statusGanti: 'MASIH LAYAK', mekanik: 'HENDRA', catatan: 'Pembersihan kerak asam kutub aki & grease.' },
+      { tanggal: '10/10/2026', noUnit: 'DT4204', merkBaterai: 'DELKOR 150AH', voltase: '23.8', cca: '620', ir: '6.8', kondisiFisik: 'DROP TEGANGAN', statusGanti: 'RECHARGE ULANG', mekanik: 'ANTOK', catatan: 'Lakukan charging eksternal 6 jam di workshop.' },
+      { tanggal: '05/10/2026', noUnit: 'ADT4180', merkBaterai: 'ROCKET 200AH', voltase: '21.5', cca: '310', ir: '14.2', kondisiFisik: 'BODI MENGEMBUNG', statusGanti: 'GANTI BATERAI BARU', mekanik: 'RUDI', catatan: 'Sel baterai rusak / mati total. Wajib ganti baru.' },
+      // September 2026
+      { tanggal: '24/09/2026', noUnit: 'ADT4175', merkBaterai: 'GS YUASA HD', voltase: '25.2', cca: '910', ir: '2.4', kondisiFisik: 'NORMAL', statusGanti: 'MASIH LAYAK', mekanik: 'HENDRA', catatan: 'Pemeriksaan rutin aman.' },
+      { tanggal: '15/09/2026', noUnit: 'DT4204', merkBaterai: 'DELKOR 150AH', voltase: '22.1', cca: '350', ir: '12.5', kondisiFisik: 'RETAK SAMPING', statusGanti: 'GANTI BATERAI BARU', mekanik: 'ANTOK', catatan: 'Bodi baterai bocor asam, diganti unit baru.' },
+      // Agustus 2026
+      { tanggal: '26/08/2026', noUnit: 'ADT4174', merkBaterai: 'INCOE GOLD', voltase: '25.4', cca: '920', ir: '2.3', kondisiFisik: 'BAGUS', statusGanti: 'MASIH LAYAK', mekanik: 'AGUS', catatan: 'Performa prima saat start awal.' },
+      { tanggal: '14/08/2026', noUnit: 'ADT4180', merkBaterai: 'ROCKET 200AH', voltase: '23.5', cca: '580', ir: '7.1', kondisiFisik: 'KURANG AIR AKI', statusGanti: 'RECHARGE ULANG', mekanik: 'RUDI', catatan: 'Tambah air aki dan charge ulang 4 jam.' }
+    ];
+  }
+
+  function getInitialInspectionLogsFallback() {
+    return [
+      // Oktober 2026
+      { tanggal: '14/10/2026', noUnit: 'ADT4173', hmUnit: '3445.0', inspektor: 'HENDRA', startingMotor: 'NORMAL', alternator: 'NORMAL', lightingSystem: 'NORMAL', wiringHarness: 'RAPI', catatan: 'Pemeriksaan harian kelistrikan aman terkendali.' },
+      { tanggal: '13/10/2026', noUnit: 'ADT4174', hmUnit: '1234.0', inspektor: 'ANTOK', startingMotor: 'NORMAL', alternator: 'NORMAL', lightingSystem: 'ROTARY MATI', wiringHarness: 'RAPI', catatan: 'Rotary lamp belakang mati sekring, sudah diganti sekring 15A.' },
+      { tanggal: '12/10/2026', noUnit: 'DT4204', hmUnit: '1890.0', inspektor: 'RUDI', startingMotor: 'LAMBAT START', alternator: 'NORMAL', lightingSystem: 'NORMAL', wiringHarness: 'KABEL KENDOR', catatan: 'Terminal B+ starter kendor, sudah dikencangkan kembali.' },
+      // September 2026
+      { tanggal: '26/09/2026', noUnit: 'ADT4175', hmUnit: '2890.0', inspektor: 'HENDRA', startingMotor: 'NORMAL', alternator: 'NORMAL', lightingSystem: 'NORMAL', wiringHarness: 'RAPI', catatan: 'Inspeksi berkala kelistrikan lengkap.' },
+      { tanggal: '16/09/2026', noUnit: 'ADT4180', hmUnit: '5100.0', inspektor: 'AGUS', startingMotor: 'NORMAL', alternator: 'BELT KENDOR', lightingSystem: 'NORMAL', wiringHarness: 'RAPI', catatan: 'Belt alternator disetel ulang ketegangannya.' },
+      // Agustus 2026
+      { tanggal: '28/08/2026', noUnit: 'ADT4174', hmUnit: '1100.0', inspektor: 'ANTOK', startingMotor: 'NORMAL', alternator: 'NORMAL', lightingSystem: 'NORMAL', wiringHarness: 'RAPI', catatan: 'Pemeriksaan rutin bulanan aman.' },
+      { tanggal: '15/08/2026', noUnit: 'DT4204', hmUnit: '1750.0', inspektor: 'RUDI', startingMotor: 'NORMAL', alternator: 'NORMAL', lightingSystem: 'LAMPU DEPAN MATI', wiringHarness: 'RAPI', catatan: 'Penggantian bohlam H4 halogen lampu kerja depan.' }
+    ];
+  }
+
+  var isRunningInGAS = (typeof google !== 'undefined' && google.script && google.script.run);
+  var globalPMLogs = [];
+  var globalBatteryLogs = isRunningInGAS ? [] : getInitialBatteryLogsFallback();
+  var globalInspectionLogs = isRunningInGAS ? [] : getInitialInspectionLogsFallback();
+  var selectedMechanicsList = [];
+  var selectedInspectorsList = [];
+  var selectedPMMechanicsList = [];
+  var isAdminAuthorized = false;
+  var dashMetricChartInstance = null;
+
+  /* State penanda sesi pengalihan form dari Report Pekerjaan ke Analisa Kerusakan */
+  var isRedirectedFromReportToBreakdown = false;
+
+  /* State penampung antrean multi-foto per formulir */
+  var multiPhotosState = {
+    rep: [],   // Form Input Laporan Pekerjaan
+    bat: [],   // Form Monitoring Baterai
+    brk: [],   // Form Analisa Kerusakan (RCFA)
+    insp: [],  // Form Checklist Inspeksi
+    inspAc: [],// Form Checklist Khusus AC
+    pm: []     // Form Preventive Maintenance
+  };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    initApp();
+  });
+
+  function initApp() {
+    var todayStr = new Date().toISOString().slice(0, 10);
+    var elTgl = document.getElementById('repTanggal');
+    if (elTgl) elTgl.value = todayStr;
+
+    var elPmTgl = document.getElementById('pmTanggal');
+    if (elPmTgl) elPmTgl.value = todayStr;
+
+    var elInspTgl = document.getElementById('inspTanggal');
+    if (elInspTgl) elInspTgl.value = todayStr;
+
+    var elInspAcTgl = document.getElementById('inspAcTanggal');
+    if (elInspAcTgl) elInspAcTgl.value = todayStr;
+
+    var elBatTgl = document.getElementById('batTanggal');
+    if (elBatTgl) elBatTgl.value = todayStr;
+
+    var curYear = new Date().getFullYear();
+    var curMonth = new Date().getMonth() + 1;
+    var selY = document.getElementById('dashYear');
+    var selM = document.getElementById('dashMonth');
+    if (selY) selY.value = curYear;
+    if (selM) selM.value = curMonth;
+
+    var savedTheme = localStorage.getItem('AE_THEME') || 'default';
+    if (typeof applyTheme === 'function') applyTheme(savedTheme);
+    var selTheme = document.getElementById('settingAppTheme');
+    if (selTheme) selTheme.value = savedTheme;
+
+    var savedFolder = localStorage.getItem('AE_DRIVE_FOLDER_ID') || '';
+    var inpFolder = document.getElementById('settingDriveFolderId');
+    if (inpFolder) inpFolder.value = savedFolder;
+
+    localStorage.removeItem('AE_ADMIN_PIN');
+
+    loadInitialMetadata();
+    // Inisialisasi awal hanya memuat KPI Dashboard aktif (On-Demand Lazy Loading)
+    if (typeof loadDashboardKPI === 'function') {
+      loadDashboardKPI();
+    }
+  }
+
+  /**
+   * ============================================================================
+   * ARSITEKTUR CLIENT-SIDE IN-MEMORY CACHE (ZETTBOT STANDAR BAGIAN 9 BUTIR 6)
+   * Menyimpan data per tab di memori browser untuk navigasi instan 0 detik
+   * ============================================================================
+   */
+  var appDataCache = {
+    reports: { data: null, totalCount: 0, page: 1, pageSize: 25, totalPages: 1, lastFetched: 0 },
+    breakdown: { data: null, lastFetched: 0 },
+    battery: { data: null, lastFetched: 0 },
+    pm: { data: null, lastFetched: 0 },
+    inspection: { data: null, lastFetched: 0 }
+  };
+  window.appDataCache = appDataCache;
+
+  function fetchPMLogs(forceRefresh, callback) {
+    if (!forceRefresh && appDataCache.pm && appDataCache.pm.data) {
+      globalPMLogs = appDataCache.pm.data;
+      if (callback) callback(globalPMLogs);
+      return;
+    }
+    if (typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getPMLogs === 'function') {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && res.logs) {
+            globalPMLogs = res.logs;
+            appDataCache.pm = { data: res.logs, lastFetched: Date.now() };
+            if (typeof updateDashboardPMMetrics === 'function') updateDashboardPMMetrics();
+            if (callback) callback(globalPMLogs);
+          }
+        })
+        .withFailureHandler(function (err) {
+          console.warn('Gagal memuat log PM:', err);
+          if (callback) callback(globalPMLogs);
+        })
+        .getPMLogs();
+    } else {
+      if (callback) callback(globalPMLogs || []);
+    }
+  }
+  window.fetchPMLogs = fetchPMLogs;
+
+  function fetchInspectionLogs(forceRefresh, callback) {
+    if (!forceRefresh && appDataCache.inspection && appDataCache.inspection.data) {
+      globalInspectionLogs = appDataCache.inspection.data;
+      if (callback) callback(globalInspectionLogs);
+      return;
+    }
+    if (typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getInspectionLogs === 'function') {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && res.logs) {
+            globalInspectionLogs = res.logs;
+            appDataCache.inspection = { data: res.logs, lastFetched: Date.now() };
+            if (callback) callback(globalInspectionLogs);
+          }
+        })
+        .withFailureHandler(function (err) {
+          console.warn('Gagal memuat log inspeksi:', err);
+          if (callback) callback(globalInspectionLogs);
+        })
+        .getInspectionLogs();
+    } else {
+      if (callback) callback(globalInspectionLogs || []);
+    }
+  }
+  window.fetchInspectionLogs = fetchInspectionLogs;
+
+  /**
+   * Pembaruan manual data dari database (opsional jika pengguna menekan tombol refresh)
+   */
+  function syncAllDataFromSpreadsheet(forceClear) {
+    if (forceClear) {
+      window.globalAllWorkReports = [];
+      allFilteredReports = [];
+      appDataCache = {
+        reports: { data: null, totalCount: 0, page: 1, pageSize: 25, totalPages: 1, lastFetched: 0 },
+        breakdown: { data: null, lastFetched: 0 },
+        battery: { data: null, lastFetched: 0 },
+        pm: { data: null, lastFetched: 0 },
+        inspection: { data: null, lastFetched: 0 }
+      };
+      window.appDataCache = appDataCache;
+    }
+    if (typeof loadDashboardKPI === 'function') loadDashboardKPI();
+  }
+  window.syncAllDataFromSpreadsheet = syncAllDataFromSpreadsheet;
+
+  function switchTab(tabId) {
+    if (tabId === 'productivity' && !isAdminAuthorized) {
+      if (typeof openAdminPinModal === 'function') openAdminPinModal();
+      return;
+    }
+
+    var tabs = document.querySelectorAll('.nav-item');
+    tabs.forEach(function (el) { el.classList.remove('active'); });
+
+    var contents = document.querySelectorAll('.tab-content');
+    contents.forEach(function (el) { el.classList.remove('active'); });
+
+    var targetContent = document.getElementById('tab-' + tabId);
+    if (targetContent) targetContent.classList.add('active');
+
+    var navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(function (el) {
+      var onclickAttr = el.getAttribute('onclick') || '';
+      if (onclickAttr.indexOf(tabId) !== -1 || (tabId === 'productivity' && el.id === 'nav-item-productivity')) {
+        el.classList.add('active');
+      }
+    });
+
+    // Lazy load per tab dengan In-Memory Cache (ZettBOT Standar Bagian 9 Butir 6)
+    if (tabId === 'master' && typeof loadMasterHubData === 'function') {
+      loadMasterHubData();
+    } else if (tabId === 'dashboard' && typeof loadDashboardKPI === 'function') {
+      loadDashboardKPI();
+    } else if (tabId === 'report' && typeof refreshSubtabReportLog === 'function') {
+      refreshSubtabReportLog(false);
+    } else if (tabId === 'breakdown' && typeof loadBreakdownLogs === 'function') {
+      loadBreakdownLogs(false);
+    } else if (tabId === 'productivity' && typeof loadMechanicProductivityData === 'function') {
+      loadMechanicProductivityData();
+    } else if (tabId === 'pm') {
+      fetchPMLogs(false, function () {
+        if (typeof renderNextPMScheduleTable === 'function') renderNextPMScheduleTable();
+      });
+    } else if (tabId === 'battery') {
+      if (typeof fetchAndRenderBatteryLogs === 'function') {
+        fetchAndRenderBatteryLogs(false);
+      } else if (typeof renderBatteryMonitoringTable === 'function') {
+        renderBatteryMonitoringTable();
+      }
+    } else if (tabId === 'inspection') {
+      fetchInspectionLogs(false, function () {
+        if (typeof renderNextInspectionScheduleTable === 'function') {
+          renderNextInspectionScheduleTable();
+        }
+      });
+      if (typeof renderNextInspectionScheduleTable === 'function') {
+        renderNextInspectionScheduleTable();
+      }
+    }
+  }
+
+  function getDirectDriveImageUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    var trimmed = url.trim();
+    if (trimmed.indexOf('data:image') === 0 || trimmed.indexOf('placehold.co') !== -1) {
+      return trimmed;
+    }
+    var match = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      // Menambahkan =s0 untuk memaksa Google Drive menyajikan resolusi asli (Full Ultra-HD)
+      return 'https://lh3.googleusercontent.com/d/' + match[1] + '=s0';
+    }
+    return trimmed;
+  }
+
+  function showPdfRenderOverlay(title, subtitle) {
+    hidePdfRenderOverlay();
+    var overlay = document.createElement('div');
+    overlay.id = 'pdfRenderingProgressOverlay';
+    overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10000000; background: rgba(15, 23, 42, 0.94); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #ffffff; text-align: center; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; pointer-events: all; box-sizing: border-box; padding: 20px;';
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background: #1e293b; border: 1.5px solid #334155; border-radius: 12px; padding: 24px 32px; max-width: 420px; width: 100%; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column; align-items: center; gap: 14px;';
+
+    var spinner = document.createElement('div');
+    spinner.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size: 36px; color: #38bdf8;"></i>';
+
+    var titleEl = document.createElement('div');
+    titleEl.style.cssText = 'font-size: 16px; font-weight: 800; color: #f8fafc; letter-spacing: 0.3px;';
+    titleEl.textContent = title || 'Menyiapkan Dokumen PDF...';
+
+    var subtitleEl = document.createElement('div');
+    subtitleEl.style.cssText = 'font-size: 11px; color: #94a3b8; line-height: 1.4;';
+    subtitleEl.textContent = subtitle || 'Sedang merender kanvas dokumen resolusi tinggi secara presisi (Anti-Pecah & Fit A4)...';
+
+    card.appendChild(spinner);
+    card.appendChild(titleEl);
+    card.appendChild(subtitleEl);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+
+  function hidePdfRenderOverlay() {
+    var existing = document.getElementById('pdfRenderingProgressOverlay');
+    if (existing && existing.parentNode) {
+      existing.parentNode.removeChild(existing);
+    }
+  }
+
+  window.showPdfRenderOverlay = showPdfRenderOverlay;
+  window.hidePdfRenderOverlay = hidePdfRenderOverlay;
+
+  /**
+   * Helper Universal Indikator Loading Cepat & Responsif pada Tombol Submit
+   */
+  function setButtonLoading(btn, isLoading, loadingText) {
+    if (!btn) return;
+    if (isLoading) {
+      if (!btn._origHtml) btn._origHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.classList.add('btn-loading');
+      btn.innerHTML = '<span style="display: inline-flex; align-items: center; justify-content: center; gap: 8px;"><i class="fas fa-spinner fa-spin"></i> ' + (loadingText || 'MEMPROSES...') + '</span>';
+    } else {
+      btn.disabled = false;
+      btn.classList.remove('btn-loading');
+      if (btn._origHtml) {
+        btn.innerHTML = btn._origHtml;
+      }
+    }
+  }
+  window.setButtonLoading = setButtonLoading;
+
+
+  function handleMultiPhotoSelected(inputEl, formKey) {
+    if (!inputEl || !inputEl.files || inputEl.files.length === 0) return;
+    var files = Array.prototype.slice.call(inputEl.files);
+    var processedCount = 0;
+
+    showToast('Memproses & mengompresi ' + files.length + ' foto...', 'info');
+
+    files.forEach(function (file) {
+      if (!file.type.match('image.*')) {
+        processedCount++;
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        compressImageToCanvas(e.target.result, 1200, 0.75, function (compressedBase64) {
+          if (!multiPhotosState[formKey]) multiPhotosState[formKey] = [];
+          multiPhotosState[formKey].push({ base64: compressedBase64, caption: '' });
+          processedCount++;
+          if (processedCount === files.length) {
+            renderMultiPhotoGallery(formKey);
+            showToast(files.length + ' foto berhasil ditambahkan ke form.', 'success');
+          }
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+
+    inputEl.value = '';
+  }
+
+  function compressImageToCanvas(base64Data, maxWidth, quality, callback) {
+    var img = new Image();
+    img.onload = function () {
+      var w = img.width;
+      var h = img.height;
+      if (w > maxWidth) {
+        h = Math.round((h * maxWidth) / w);
+        w = maxWidth;
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      var compressed = canvas.toDataURL('image/jpeg', quality);
+      callback(compressed);
+    };
+    img.src = base64Data;
+  }
+
+  function renderMultiPhotoGallery(formKey) {
+    var galleryEl = document.getElementById(formKey + 'PhotoGallery');
+    if (!galleryEl) return;
+    var photos = multiPhotosState[formKey] || [];
+
+    if (photos.length === 0) {
+      galleryEl.innerHTML = '';
+      return;
+    }
+
+    var html = '';
+    photos.forEach(function (item, idx) {
+      var b64 = (typeof item === 'string') ? item : (item.base64 || '');
+      var caption = (typeof item === 'object' && item.caption) ? item.caption : '';
+      var safeCaption = escapeHtml(caption);
+
+      html += '<div class="multi-photo-card">' +
+        '<div class="multi-photo-thumb-wrap">' +
+        '<img src="' + b64 + '" class="multi-photo-thumb" onclick="openImageModal(\'' + b64 + '\')" title="Klik untuk memperbesar gambar">' +
+        '<span class="multi-photo-badge-idx">#' + (idx + 1) + '</span>' +
+        '<button type="button" class="multi-photo-btn-delete" onclick="removeMultiPhoto(\'' + formKey + '\', ' + idx + ')" title="Hapus foto ini">&times;</button>' +
+        '</div>' +
+        '<div class="multi-photo-caption-box">' +
+        '<input type="text" class="multi-photo-caption-input" placeholder="Tulis keterangan foto #' + (idx + 1) + '..." value="' + safeCaption + '" oninput="updateMultiPhotoCaption(\'' + formKey + '\', ' + idx + ', this.value)">' +
+        '</div>' +
+        '</div>';
+    });
+
+    galleryEl.innerHTML = html;
+  }
+
+  function updateMultiPhotoCaption(formKey, index, text) {
+    if (multiPhotosState[formKey] && multiPhotosState[formKey][index]) {
+      if (typeof multiPhotosState[formKey][index] === 'string') {
+        multiPhotosState[formKey][index] = { base64: multiPhotosState[formKey][index], caption: text };
+      } else {
+        multiPhotosState[formKey][index].caption = text;
+      }
+    }
+  }
+  window.updateMultiPhotoCaption = updateMultiPhotoCaption;
+
+  function getMultiPhotosBase64(formKey) {
+    var list = multiPhotosState[formKey] || [];
+    return list.map(function (item) {
+      if (typeof item === 'string') return item;
+      return (item && item.base64) ? item.base64 : '';
+    }).filter(function (b) { return b && b.length > 0; });
+  }
+  window.getMultiPhotosBase64 = getMultiPhotosBase64;
+
+  function getMultiPhotosCaptions(formKey) {
+    var list = multiPhotosState[formKey] || [];
+    return list.map(function (item) {
+      if (typeof item === 'string') return '';
+      return (item && item.caption) ? item.caption : '';
+    });
+  }
+  window.getMultiPhotosCaptions = getMultiPhotosCaptions;
+
+  function savePhotoCaptionsMapping(key, captionsList) {
+    try {
+      if (key && Array.isArray(captionsList)) {
+        localStorage.setItem('AE_CAPTIONS_' + key, JSON.stringify(captionsList));
+      }
+    } catch (e) { }
+  }
+  window.savePhotoCaptionsMapping = savePhotoCaptionsMapping;
+
+  function getPhotoCaption(url, idx, parentItem) {
+    if (parentItem) {
+      if (parentItem.photoCaptions && parentItem.photoCaptions[idx]) {
+        return parentItem.photoCaptions[idx];
+      }
+      var pId = parentItem.idFar || parentItem.idFAR || parentItem.idReport || parentItem.idPM || parentItem.idBat || parentItem.idBaterai || parentItem.idInsp || parentItem.idInspeksi;
+      if (pId) {
+        try {
+          var stored = localStorage.getItem('AE_CAPTIONS_' + pId) || localStorage.getItem('AE_CAPTIONS_' + String(pId).toUpperCase());
+          if (stored) {
+            var parsed = JSON.parse(stored);
+            if (parsed && parsed[idx]) return parsed[idx];
+          }
+        } catch (e) { }
+      }
+
+      if (parentItem.noUnit && parentItem.tanggal) {
+        try {
+          var altKey = parentItem.noUnit + '_' + parentItem.tanggal;
+          var storedAlt = localStorage.getItem('AE_CAPTIONS_' + altKey) || localStorage.getItem('AE_CAPTIONS_' + altKey.toUpperCase());
+          if (storedAlt) {
+            var parsedAlt = JSON.parse(storedAlt);
+            if (parsedAlt && parsedAlt[idx]) return parsedAlt[idx];
+          }
+        } catch (e) { }
+      }
+
+      // Cek apakah caption tertanam di dalam teks tindakan / deskripsi
+      var textFields = [parentItem.actionTaken, parentItem.tindakan, parentItem.keterangan, parentItem.preventionPlan, parentItem.deskripsi];
+      for (var f = 0; f < textFields.length; f++) {
+        var txt = textFields[f];
+        if (txt && typeof txt === 'string') {
+          var reg = new RegExp('Foto\\s*#' + (idx + 1) + '\\s*:\\s*([^\\n\\r\\-]+)', 'i');
+          var m = txt.match(reg);
+          if (m && m[1] && m[1].trim()) {
+            return m[1].trim();
+          }
+        }
+      }
+    }
+    if (url && typeof url === 'string') {
+      if (url.indexOf('|') !== -1) {
+        var pParts = url.split('|');
+        if (pParts.length > 1 && pParts[1].trim()) return pParts[1].trim();
+      }
+      try {
+        var cleanUrl = url.split('|')[0].trim();
+        var cap = localStorage.getItem('AE_CAP_URL_' + cleanUrl.slice(-40));
+        if (cap) return cap;
+      } catch (e) { }
+    }
+    return '';
+  }
+  window.getPhotoCaption = getPhotoCaption;
+
+  function removeMultiPhoto(formKey, index) {
+    if (multiPhotosState[formKey] && index >= 0 && index < multiPhotosState[formKey].length) {
+      multiPhotosState[formKey].splice(index, 1);
+      renderMultiPhotoGallery(formKey);
+      showToast('Foto #' + (index + 1) + ' dihapus dari antrean.', 'info');
+    }
+  }
+
+  function resetMultiPhotos(formKey) {
+    multiPhotosState[formKey] = [];
+    var galleryEl = document.getElementById(formKey + 'PhotoGallery');
+    if (galleryEl) galleryEl.innerHTML = '';
+  }
+
+  function openImageModal(url) {
+    var directUrl = getDirectDriveImageUrl(url);
+    var img = document.getElementById('modalImg');
+    var btn = document.getElementById('modalDownloadBtn');
+    if (img) img.src = directUrl;
+    if (btn) btn.href = directUrl;
+    var modal = document.getElementById('imageModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeImageModal() {
+    var modal = document.getElementById('imageModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function showToast(msg, type) {
+    var container = document.getElementById('toastContainer');
+    if (!container) return;
+    var toast = document.createElement('div');
+    toast.className = 'toast ' + (type === 'error' ? 'toast-error' : (type === 'info' ? 'toast' : 'toast-success'));
+    toast.textContent = msg;
+    container.appendChild(toast);
+
+    setTimeout(function () {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(10px)';
+      toast.style.transition = 'all 0.3s ease';
+      setTimeout(function () {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 300);
+    }, 3500);
+  }
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function formatDateDDMMYYYY(val) {
+    if (!val) return '-';
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      var d = ('0' + val.getDate()).slice(-2);
+      var m = ('0' + (val.getMonth() + 1)).slice(-2);
+      var y = val.getFullYear();
+      return d + '-' + m + '-' + y;
+    }
+    var str = String(val).trim();
+    var isoMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (isoMatch) {
+      return ('0' + isoMatch[3]).slice(-2) + '-' + ('0' + isoMatch[2]).slice(-2) + '-' + isoMatch[1];
+    }
+    var dmyMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (dmyMatch) {
+      return ('0' + dmyMatch[1]).slice(-2) + '-' + ('0' + dmyMatch[2]).slice(-2) + '-' + dmyMatch[3];
+    }
+    var p = new Date(str);
+    if (!isNaN(p.getTime())) {
+      return ('0' + p.getDate()).slice(-2) + '-' + ('0' + (p.getMonth() + 1)).slice(-2) + '-' + p.getFullYear();
+    }
+    return str;
+  }
+
+  function parseDateToTimestamp(val) {
+    if (!val) return 0;
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      return val.getTime();
+    }
+    var str = String(val).trim();
+    var isoMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (isoMatch) {
+      return new Date(parseInt(isoMatch[1], 10), parseInt(isoMatch[2], 10) - 1, parseInt(isoMatch[3], 10)).getTime();
+    }
+    var dmyMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (dmyMatch) {
+      return new Date(parseInt(dmyMatch[3], 10), parseInt(dmyMatch[2], 10) - 1, parseInt(dmyMatch[1], 10)).getTime();
+    }
+    var p = new Date(str);
+    if (!isNaN(p.getTime())) {
+      return p.getTime();
+    }
+    return 0;
+  }
+
+  function sortListByDateDescending(list, dateKey) {
+    if (!Array.isArray(list)) return [];
+    var key = dateKey || 'tanggal';
+    return list.slice().sort(function (a, b) {
+      var tA = parseDateToTimestamp(a ? a[key] : null);
+      var tB = parseDateToTimestamp(b ? b[key] : null);
+      if (tB !== tA) {
+        return tB - tA;
+      }
+      var idA = a ? (a.idReport || a.idFAR || a.id || a.noUnit || '') : '';
+      var idB = b ? (b.idReport || b.idFAR || b.id || b.noUnit || '') : '';
+      if (idB && idA && idB !== idA) {
+        return String(idB).localeCompare(String(idA));
+      }
+      return 0;
+    });
+  }
+
+  function normalizeCategoryName(rawCat) {
+    if (!rawCat) return '-';
+    var str = String(rawCat).trim();
+    if (!str) return '-';
+    var upper = str.toUpperCase();
+
+    var catList = (typeof globalCategories !== 'undefined' && Array.isArray(globalCategories) && globalCategories.length > 0)
+      ? globalCategories
+      : ((typeof window !== 'undefined' && Array.isArray(window.globalCategories)) ? window.globalCategories : []);
+
+    // 1. Deteksi spesifik typo / variasi "AIR CONDITIONONG" -> selaraskan ke Data Master "AIR CONDITIONING"
+    if (upper === 'AIR CONDITIONONG' || upper.indexOf('CONDITIONONG') !== -1) {
+      if (catList.length > 0) {
+        var masterAC = catList.find(function (c) {
+          var cu = String(c).trim().toUpperCase();
+          return cu === 'AIR CONDITIONING' || cu.indexOf('AIR CONDITIONING') !== -1 || cu.indexOf('CONDITIONING') !== -1;
+        });
+        if (masterAC) return String(masterAC).trim().toUpperCase();
+      }
+      return 'AIR CONDITIONING';
+    }
+
+    // 2. Selaraskan dengan data master yang ada di globalCategories
+    if (catList.length > 0) {
+      var exactMatch = catList.find(function (c) {
+        return String(c).trim().toUpperCase() === upper;
+      });
+      if (exactMatch) return String(exactMatch).trim().toUpperCase();
+
+      var subMatch = catList.find(function (c) {
+        var cu = String(c).trim().toUpperCase();
+        return (upper.length >= 4 && (cu.indexOf(upper) === 0 || upper.indexOf(cu) === 0));
+      });
+      if (subMatch) return String(subMatch).trim().toUpperCase();
+    }
+
+    return upper;
+  }
+  if (typeof window !== 'undefined') {
+    window.normalizeCategoryName = normalizeCategoryName;
+  }
+
+  function setMetricText(id, val) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function waitForImagesLoaded(container, callback) {
+    if (!container) {
+      callback();
+      return;
+    }
+    var imgs = container.querySelectorAll('img');
+    if (!imgs || imgs.length === 0) {
+      callback();
+      return;
+    }
+    var loaded = 0;
+    var total = imgs.length;
+    var isDone = false;
+
+    function onImgFinish() {
+      loaded++;
+      if (loaded >= total && !isDone) {
+        isDone = true;
+        callback();
+      }
+    }
+
+    var timeoutHandle = setTimeout(function () {
+      if (!isDone) {
+        isDone = true;
+        callback();
+      }
+    }, 2500);
+
+    Array.prototype.forEach.call(imgs, function (img) {
+      var src = img.getAttribute('src');
+      if (!src || img.style.display === 'none' || (img.complete && img.naturalWidth !== 0)) {
+        onImgFinish();
+      } else {
+        img.onload = onImgFinish;
+        img.onerror = onImgFinish;
+      }
+    });
+  }
+
+  function loadInitialMetadata() {
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            globalUnits = res.units || [];
+            globalCategories = res.categories || [];
+            globalMechanics = res.mechanics || [];
+            globalLocations = res.locations || [];
+            globalParts = res.parts || [];
+            if (res.companyLogoUrl) {
+              if (typeof syncCompanyLogoDisplay === 'function') {
+                syncCompanyLogoDisplay(res.companyLogoUrl);
+              } else {
+                localStorage.setItem('AE_COMPANY_LOGO_URL', res.companyLogoUrl);
+              }
+            }
+            populateDropdowns();
+          }
+        })
+        .getInitialMetadata();
+    } else {
+      globalUnits = [
+        { noUnit: 'ADT4143', model: 'A40J', tipe: 'HAULER', hmTerakhir: '3990.0' },
+        { noUnit: 'ADT4174', model: 'A40J', tipe: 'HAULER', hmTerakhir: '1234.0' },
+        { noUnit: 'DT4221', model: 'X3000_12R', tipe: 'HAULER', hmTerakhir: '1200.0' },
+        { noUnit: 'ADT4173', model: 'A40J', tipe: 'HAULER', hmTerakhir: '3445.0' },
+        { noUnit: 'DT4217', model: 'X3000_12R', tipe: 'HAULER', hmTerakhir: '679.0' },
+        { noUnit: 'DT4212', model: 'X3000_12R', tipe: 'HAULER', hmTerakhir: '3422.0' },
+        { noUnit: 'ADT4200', model: 'A40J', tipe: 'HAULER', hmTerakhir: '120.0' },
+        { noUnit: 'DT2031', model: 'X3000_10R', tipe: 'HAULER', hmTerakhir: '2111.0' }
+      ];
+      globalCategories = [
+        'STARTING MOTOR SYSTEM',
+        'ALTERNATOR & CHARGING SYSTEM',
+        'LIGHTING SYSTEM & ROTARY',
+        'WIRING HARNESS & CABLE TRAY',
+        'CABIN INSTRUMENT & GAUGES',
+        'AIR CONDITIONING & BLOWER',
+        'SAFETY DEVICE (E-STOP, HORN, CAMERA)',
+        'BATTERY & CABLE BANK'
+      ];
+      globalMechanics = [
+        { nama: 'HENDRA', keahlian: 'AUTO ELECTRICIAN HE', nrp: 'NRP-1001' },
+        { nama: 'ANTOK', keahlian: 'AC SPECIALIST', nrp: 'NRP-1002' },
+        { nama: 'RUDI', keahlian: 'DIAGNOSTIC & ECM', nrp: 'NRP-1003' },
+        { nama: 'AGUS', keahlian: 'BATTERY & STARTING', nrp: 'NRP-1004' }
+      ];
+      globalLocations = [
+        { namaLokasi: 'PIT UTARA', tipeArea: 'PIT AREA' },
+        { namaLokasi: 'PIT TIMUR', tipeArea: 'PIT AREA' },
+        { namaLokasi: 'WORKSHOP UTAMA', tipeArea: 'WORKSHOP' }
+      ];
+      globalParts = [
+        { partNumber: 'SH1029372891789291', namaPart: 'COMPRESOR AC', kategori: 'AIR CONDITIONING & BLOWER', merk: 'DENSO', satuan: 'PCS', unitModel: 'ALL HAULER' },
+        { partNumber: 'DZ13241546016', namaPart: 'COMPRESSOR', kategori: 'AIR CONDITIONING & BLOWER', merk: 'GENUINE PART', satuan: 'PCS', unitModel: 'SHACMAN X3000' },
+        { partNumber: 'DZ95188722040', namaPart: 'HEADLAMP', kategori: 'LIGHTING SYSTEM & ROTARY', merk: 'GENUINE PART', satuan: 'PCS', unitModel: 'SHACMAN X3000' },
+        { partNumber: '2871A306', namaPart: 'ALTERNATOR 24V 85A', kategori: 'ALTERNATOR & CHARGING SYSTEM', merk: 'DELCO REMY', satuan: 'PCS', unitModel: 'VOLVO A40J' },
+        { partNumber: '600-813-4421', namaPart: 'STARTING MOTOR 24V 7.5KW', kategori: 'STARTING MOTOR SYSTEM', merk: 'KOMATSU', satuan: 'PCS', unitModel: 'KOMATSU HD785' }
+      ];
+      populateDropdowns();
+    }
+  }
+
+  function populateDropdowns() {
+    var dlUnit = document.getElementById('unitDataList');
+    var dlLok = document.getElementById('lokasiDataList');
+    var dlMek = document.getElementById('mekanikDataList');
+    var dlPart = document.getElementById('partDataList');
+
+    if (dlUnit) {
+      dlUnit.innerHTML = '';
+      globalUnits.forEach(function (u) {
+        var opt = document.createElement('option');
+        opt.value = u.noUnit;
+        opt.label = u.model || '';
+        dlUnit.appendChild(opt);
+      });
+    }
+
+    if (dlLok) {
+      dlLok.innerHTML = '';
+      globalLocations.forEach(function (l) {
+        var opt = document.createElement('option');
+        opt.value = l.namaLokasi;
+        dlLok.appendChild(opt);
+      });
+    }
+
+    if (dlMek) {
+      dlMek.innerHTML = '';
+      globalMechanics.forEach(function (m) {
+        var opt = document.createElement('option');
+        opt.value = m.nama;
+        opt.label = m.keahlian || '';
+        dlMek.appendChild(opt);
+      });
+    }
+
+    if (dlPart) {
+      dlPart.innerHTML = '';
+      (globalParts || []).forEach(function (p) {
+        var optName = document.createElement('option');
+        optName.value = p.namaPart;
+        optName.label = p.partNumber + (p.merk ? ' (' + p.merk + ')' : '');
+        dlPart.appendChild(optName);
+
+        if (p.partNumber && p.partNumber !== p.namaPart) {
+          var optPn = document.createElement('option');
+          optPn.value = p.partNumber;
+          optPn.label = p.namaPart + (p.unitModel ? ' - ' + p.unitModel : '');
+          dlPart.appendChild(optPn);
+        }
+      });
+    }
+
+    var selRepCat = document.getElementById('repKategori');
+    var selFilterCat = document.getElementById('subtabFilterKategori');
+    var selPartCat = document.getElementById('mastPartKategori');
+
+    var cleanCategories = [];
+    (globalCategories || []).forEach(function (c) {
+      var norm = (typeof normalizeCategoryName === 'function') ? normalizeCategoryName(c) : String(c).trim();
+      if (norm && norm !== '-' && cleanCategories.indexOf(norm) === -1) {
+        cleanCategories.push(norm);
+      }
+    });
+
+    if (selRepCat) {
+      selRepCat.innerHTML = '<option value="">-- PILIH KATEGORI --</option>';
+      cleanCategories.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        selRepCat.appendChild(opt);
+      });
+    }
+
+    if (selFilterCat) {
+      selFilterCat.innerHTML = '<option value="">Semua Kategori</option>';
+      cleanCategories.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        selFilterCat.appendChild(opt);
+      });
+    }
+
+    if (selPartCat) {
+      selPartCat.innerHTML = '<option value="">-- PILIH KATEGORI --</option>';
+      cleanCategories.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        selPartCat.appendChild(opt);
+      });
+    }
+
+    var selBatUnit = document.getElementById('batNoUnit');
+    var selPmUnit = document.getElementById('pmNoUnit');
+
+    [selBatUnit, selPmUnit].forEach(function (sel) {
+      if (sel && sel.tagName === 'SELECT') {
+        sel.innerHTML = '<option value="">-- Pilih Unit --</option>';
+        globalUnits.forEach(function (u) {
+          var opt = document.createElement('option');
+          opt.value = u.noUnit;
+          opt.textContent = u.noUnit + (u.model ? ' (' + u.model + ')' : '');
+          sel.appendChild(opt);
+        });
+      }
+    });
+
+    var badgeAll = document.getElementById('badgeUnitCount-ALL');
+    var badgeTbl = document.getElementById('badgeUnitTableCount');
+    if (badgeAll) badgeAll.textContent = globalUnits.length;
+    if (badgeTbl) badgeTbl.textContent = globalUnits.length;
+
+    if (typeof renderMasterUnitTable === 'function') renderMasterUnitTable();
+  }
+</script>

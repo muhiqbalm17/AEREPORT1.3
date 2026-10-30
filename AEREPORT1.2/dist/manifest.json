@@ -1,0 +1,25 @@
+{
+  "name": "Sistem Report Auto Electrician - PT SMA Konawe",
+  "short_name": "AE-Report",
+  "description": "Aplikasi Monitoring, Breakdown RCFA, Inspeksi & PM Auto Electrician PT Samudera Mulia Abadi",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0f1d",
+  "theme_color": "#0d1829",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%230d1829'/%3E%3Cpath d='M256 64L96 384h128l-32 96 160-320H224z' fill='%23fbbf24'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%230d1829'/%3E%3Cpath d='M256 64L96 384h128l-32 96 160-320H224z' fill='%23fbbf24'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

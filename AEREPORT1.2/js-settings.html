@@ -1,0 +1,73 @@
+<script>
+  /**
+   * ============================================================================
+   * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+   * File: js-settings.html (Pengaturan Sistem, Tema Visual, Drive & Sinkronisasi)
+   * ============================================================================
+   */
+
+  function openSettingsModal() {
+    var modal = document.getElementById('appSettingsModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeSettingsModal() {
+    var modal = document.getElementById('appSettingsModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function applyTheme(themeName) {
+    document.body.setAttribute('data-theme', themeName);
+    document.documentElement.setAttribute('data-theme', themeName);
+    localStorage.setItem('AE_THEME', themeName);
+  }
+
+  var selThemeEl = document.getElementById('settingAppTheme');
+  if (selThemeEl) {
+    selThemeEl.addEventListener('change', function () {
+      applyTheme(this.value);
+      showToast('Tema diubah ke: ' + this.options[this.selectedIndex].text, 'info');
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var el = document.getElementById('settingAppTheme');
+    if (el && !selThemeEl) {
+      el.addEventListener('change', function () {
+        applyTheme(this.value);
+        showToast('Tema diubah ke: ' + this.options[this.selectedIndex].text, 'info');
+      });
+    }
+  });
+
+  function saveDriveFolderSetting() {
+    var inp = document.getElementById('settingDriveFolderId');
+    if (!inp) return;
+    var folderId = inp.value.trim();
+    localStorage.setItem('AE_DRIVE_FOLDER_ID', folderId);
+    showToast('ID Folder Google Drive berhasil disimpan.', 'success');
+  }
+
+  function executeForceSyncDatabase() {
+    showToast('Menyinkronkan seluruh lembar database spreadsheet...', 'info');
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            showToast('Sinkronisasi tuntas! ' + res.message, 'success');
+            loadInitialMetadata();
+            loadDashboardKPI();
+            refreshSubtabReportLog();
+          } else {
+            showToast('Gagal sinkron: ' + (res ? res.error : 'Error'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          showToast('Koneksi gagal: ' + err.message, 'error');
+        })
+        .syncAndCleanDatabase();
+    } else {
+      showToast('Sinkronisasi selesai (Offline Mode).', 'success');
+    }
+  }
+</script>

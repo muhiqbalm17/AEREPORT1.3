@@ -1,0 +1,1198 @@
+<script>
+    /**
+     * ============================================================================
+     * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+     * File: js-pm.html (Tab Preventive Maintenance, Jadwal Prediksi HM, & Log Servis)
+     * ============================================================================
+     */
+
+    function normalizePMLevel(lvl) {
+        var s = String(lvl || '').toUpperCase().replace(/\s+/g, '');
+        if (s === 'PM1' || s === 'PM250') return 'PM1';
+        if (s === 'PM2' || s === 'PM500') return 'PM2';
+        if (s === 'PM3' || s === 'PM1000') return 'PM3';
+        if (s === 'PM4' || s === 'PM2000') return 'PM4';
+        return lvl || 'PM1';
+    }
+    window.normalizePMLevel = normalizePMLevel;
+
+    function getPMLevelHours(lvl) {
+        var norm = normalizePMLevel(lvl);
+        if (norm === 'PM4') return 2000;
+        if (norm === 'PM3') return 1000;
+        if (norm === 'PM2') return 500;
+        return 250;
+    }
+    window.getPMLevelHours = getPMLevelHours;
+
+    function switchPMSubTab(subTabId) {
+        var btnSchedule = document.getElementById('subnav-pm-btn-schedule');
+        var btnInput = document.getElementById('subnav-pm-btn-input');
+        var panelSchedule = document.getElementById('pm-subtab-schedule');
+        var panelInput = document.getElementById('pm-subtab-input');
+
+        if (btnSchedule) btnSchedule.classList.toggle('active', subTabId === 'schedule');
+        if (btnInput) btnInput.classList.toggle('active', subTabId === 'input');
+        if (panelSchedule) panelSchedule.classList.toggle('active', subTabId === 'schedule');
+        if (panelInput) panelInput.classList.toggle('active', subTabId === 'input');
+
+        if (subTabId === 'schedule' && typeof renderNextPMScheduleTable === 'function') {
+            renderNextPMScheduleTable();
+        }
+    }
+
+    function handlePMMechanicInputKey(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addSelectedPMMechanicFromInput();
+        }
+    }
+
+    function handlePMMechanicInputDatalist(e) {
+        var val = e.target.value.trim();
+        if (!val) return;
+        var match = (globalMechanics || []).find(function (m) {
+            return (m.nama && m.nama.toUpperCase() === val.toUpperCase());
+        });
+        if (match) {
+            addPMMechanicTag(match.nama);
+            e.target.value = '';
+        }
+    }
+
+    function addSelectedPMMechanicFromInput() {
+        var inp = document.getElementById('pmMekanikInput');
+        if (!inp) return;
+        var val = inp.value.trim();
+        if (!val) return;
+
+        var parts = val.split(/[,;&/]+/);
+        parts.forEach(function (p) {
+            var name = p.trim().toUpperCase();
+            if (name) addPMMechanicTag(name);
+        });
+        inp.value = '';
+        inp.focus();
+    }
+
+    function addPMMechanicTag(name) {
+        var clean = name.trim().toUpperCase();
+        if (!clean) return;
+        if (selectedPMMechanicsList.indexOf(clean) !== -1) {
+            showToast('Mekanik PM ' + clean + ' sudah ada di daftar!', 'info');
+            return;
+        }
+        selectedPMMechanicsList.push(clean);
+        renderSelectedPMMechanicTags();
+    }
+
+    function removeSelectedPMMechanicTag(index) {
+        if (index >= 0 && index < selectedPMMechanicsList.length) {
+            selectedPMMechanicsList.splice(index, 1);
+            renderSelectedPMMechanicTags();
+        }
+    }
+
+    function clearSelectedPMMechanicTags() {
+        selectedPMMechanicsList = [];
+        renderSelectedPMMechanicTags();
+    }
+
+    function renderSelectedPMMechanicTags() {
+        var container = document.getElementById('pmMekanikTagsContainer');
+        var hiddenInp = document.getElementById('pmMekanik');
+        if (hiddenInp) hiddenInp.value = selectedPMMechanicsList.join(', ');
+        if (!container) return;
+        if (selectedPMMechanicsList.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        var html = '';
+        selectedPMMechanicsList.forEach(function (name, idx) {
+            var safeName = escapeHtml(name);
+            html += '<span style="display: inline-flex; align-items: center; gap: 6px; background: var(--card-bg-subtle); border: 1px solid var(--accent-orange); color: var(--text-main); padding: 3px 8px; border-radius: var(--radius-sm); font-size: 11.5px; font-weight: 700;">' +
+                '<span>' + safeName + '</span>' +
+                '<span onclick="removeSelectedPMMechanicTag(' + idx + ')" style="cursor: pointer; color: #f87171; font-weight: 900; margin-left: 2px; font-size: 13px;" title="Hapus mekanik PM">&times;</span>' +
+                '</span>';
+        });
+        container.innerHTML = html;
+    }
+
+    function renderNextPMScheduleTable() {
+        var tbody = document.getElementById('pmScheduleTableBody');
+        if (!tbody) return;
+
+        var latestUnitHM = {};
+
+        allFilteredReports.forEach(function (r) {
+            var unitCode = String(r.noUnit || '').trim().toUpperCase();
+            var hmVal = parseFloat(r.hmUnit);
+            if (!unitCode || isNaN(hmVal) || hmVal <= 0) return;
+
+            if (!latestUnitHM[unitCode] || hmVal > latestUnitHM[unitCode].hm) {
+                latestUnitHM[unitCode] = {
+                    hm: hmVal,
+                    tanggal: r.tanggal ? formatDateDDMMYYYY(r.tanggal) : '-',
+                    model: r.modelUnit || ''
+                };
+            }
+        });
+
+        (window.globalInspectionLogs || []).forEach(function (insp) {
+            var unitCode = String(insp.noUnit || '').trim().toUpperCase();
+            var hmVal = parseFloat(insp.hmUnit);
+            if (!unitCode || isNaN(hmVal) || hmVal <= 0) return;
+
+            if (!latestUnitHM[unitCode] || hmVal > latestUnitHM[unitCode].hm) {
+                latestUnitHM[unitCode] = {
+                    hm: hmVal,
+                    tanggal: (insp.tanggal ? formatDateDDMMYYYY(insp.tanggal) : '-') + ' (Inspeksi)',
+                    model: latestUnitHM[unitCode] ? latestUnitHM[unitCode].model : ''
+                };
+            }
+        });
+
+        (window.globalPMLogs || []).forEach(function (pLog) {
+            var unitCode = String(pLog.noUnit || '').trim().toUpperCase();
+            var hmVal = parseFloat(pLog.hmUnit);
+            if (!unitCode || isNaN(hmVal) || hmVal <= 0) return;
+
+            if (!latestUnitHM[unitCode] || hmVal > latestUnitHM[unitCode].hm) {
+                latestUnitHM[unitCode] = {
+                    hm: hmVal,
+                    tanggal: (pLog.tanggal ? formatDateDDMMYYYY(pLog.tanggal) : '-') + ' (PM)',
+                    model: latestUnitHM[unitCode] ? latestUnitHM[unitCode].model : ''
+                };
+            }
+        });
+
+        globalUnits.forEach(function (u) {
+            var unitCode = String(u.noUnit || '').trim().toUpperCase();
+            if (!unitCode) return;
+            var masterHM = parseFloat(u.hmTerakhir || u.HMTerakhir) || 0;
+
+            if (!latestUnitHM[unitCode]) {
+                latestUnitHM[unitCode] = {
+                    hm: masterHM,
+                    tanggal: masterHM > 0 ? 'Master Unit' : '-',
+                    model: u.model || ''
+                };
+            } else {
+                if (!latestUnitHM[unitCode].model && u.model) {
+                    latestUnitHM[unitCode].model = u.model;
+                }
+                if (masterHM > latestUnitHM[unitCode].hm) {
+                    latestUnitHM[unitCode].hm = masterHM;
+                    latestUnitHM[unitCode].tanggal = 'Master Unit';
+                }
+            }
+        });
+
+        var scheduleList = [];
+
+        Object.keys(latestUnitHM).forEach(function (code) {
+            var info = latestUnitHM[code];
+            var currentHM = info.hm;
+
+            var targetPMHM = 0;
+            var remainingHM = 0;
+            var pmType = 'PM1';
+            var urgencyCode = 'NORMAL';
+            var urgencyLabel = 'NORMAL';
+            var badgeStyle = 'background: rgba(52, 211, 153, 0.12); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);';
+
+            // Temukan log PM terakhir untuk unit ini dari riwayat servis
+            var latestPM = null;
+            if (window.globalPMLogs && window.globalPMLogs.length > 0) {
+                for (var pi = 0; pi < window.globalPMLogs.length; pi++) {
+                    var pLog = window.globalPMLogs[pi];
+                    if (String(pLog.noUnit || '').trim().toUpperCase() === code) {
+                        var pHM = parseFloat(pLog.hmUnit) || 0;
+                        if (!latestPM || pHM > latestPM.hm) {
+                            latestPM = {
+                                hm: pHM,
+                                level: pLog.pmLevel || 'PM1',
+                                tanggal: pLog.tanggal || ''
+                            };
+                        }
+                    }
+                }
+            }
+
+            if (currentHM > 0) {
+                // Siklus dasar kelipatan 250 terdekat di atas currentHM
+                var baseTarget = Math.ceil((currentHM + 0.1) / 250) * 250;
+                targetPMHM = baseTarget;
+
+                // Jika unit sudah memiliki riwayat log PM yang valid:
+                if (latestPM) {
+                    var servicedTarget = 0;
+                    if (latestPM.hm > 0) {
+                        servicedTarget = Math.round(latestPM.hm / 250) * 250;
+                        if (servicedTarget === 0) servicedTarget = 250;
+                    }
+                    var lvlHours = getPMLevelHours(latestPM.level);
+                    if (lvlHours > servicedTarget) servicedTarget = lvlHours;
+
+                    // Jika target saat ini sudah pernah diservis pada log PM terakhir
+                    // ATAU selisih HM berjalan masih baru diservis (< 200 HM dari waktu servis PM):
+                    if (targetPMHM <= servicedTarget || (latestPM.hm > 0 && (currentHM - latestPM.hm) < 200 && targetPMHM <= servicedTarget + 250 && latestPM.hm >= (baseTarget - 50))) {
+                        targetPMHM = Math.max(servicedTarget, baseTarget) + 250;
+                    }
+                }
+
+                // Proteksi jika ada PM tercatat baru tanpa HM (<= 7 hari lalu):
+                if (latestPM && latestPM.hm === 0 && latestPM.tanggal) {
+                    var pDate = new Date(latestPM.tanggal);
+                    var diffDays = (new Date() - pDate) / (1000 * 60 * 60 * 24);
+                    if (diffDays <= 7 && targetPMHM <= baseTarget) {
+                        targetPMHM = baseTarget + 250;
+                    }
+                }
+
+                remainingHM = parseFloat((targetPMHM - currentHM).toFixed(1));
+
+                if (targetPMHM % 2000 === 0) {
+                    pmType = 'PM4';
+                } else if (targetPMHM % 1000 === 0) {
+                    pmType = 'PM3';
+                } else if (targetPMHM % 500 === 0) {
+                    pmType = 'PM2';
+                } else {
+                    pmType = 'PM1';
+                }
+
+                if (remainingHM <= 0) {
+                    urgencyCode = 'OVERDUE';
+                    urgencyLabel = 'JATUH TEMPO (HARI INI)';
+                    badgeStyle = 'background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5);';
+                } else if (remainingHM <= 20) {
+                    urgencyCode = 'HARI_INI';
+                    urgencyLabel = 'PM HARI INI (&le; 20 JAM)';
+                    badgeStyle = 'background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4);';
+                } else if (remainingHM <= 40) {
+                    urgencyCode = 'BESOK';
+                    urgencyLabel = 'PM BESOK (&le; 40 JAM)';
+                    badgeStyle = 'background: rgba(251, 191, 36, 0.18); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.5);';
+                } else if (remainingHM <= 50) {
+                    urgencyCode = 'SEGERA';
+                    urgencyLabel = 'SEGERA PM (&le; 50 JAM)';
+                    badgeStyle = 'background: rgba(251, 191, 36, 0.12); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3);';
+                } else if (remainingHM <= 150) {
+                    urgencyCode = 'MONITORING';
+                    urgencyLabel = 'MONITORING (&le; 150 JAM)';
+                    badgeStyle = 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);';
+                } else {
+                    urgencyCode = 'NORMAL';
+                    urgencyLabel = 'NORMAL (&gt; 150 JAM)';
+                    badgeStyle = 'background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3);';
+                }
+            } else {
+                pmType = 'PM1';
+                urgencyCode = 'BELUM_ADA_HM';
+                urgencyLabel = 'BELUM ADA LOG HM';
+                badgeStyle = 'background: rgba(148, 163, 184, 0.08); color: #64748b; border: 1px solid rgba(148, 163, 184, 0.2);';
+            }
+
+            scheduleList.push({
+                noUnit: code,
+                model: info.model || '-',
+                currentHM: currentHM,
+                lastDate: info.tanggal,
+                targetPMHM: targetPMHM,
+                pmType: pmType,
+                remainingHM: remainingHM,
+                urgencyCode: urgencyCode,
+                urgencyLabel: urgencyLabel,
+                badgeStyle: badgeStyle,
+                latestPM: latestPM
+            });
+        });
+
+        scheduleList.sort(function (a, b) {
+            if (a.currentHM > 0 && b.currentHM > 0) return a.remainingHM - b.remainingHM;
+            if (a.currentHM > 0 && b.currentHM <= 0) return -1;
+            if (a.currentHM <= 0 && b.currentHM > 0) return 1;
+            return a.noUnit.localeCompare(b.noUnit);
+        });
+
+        globalPMScheduleData = scheduleList;
+
+        var todayList = scheduleList.filter(function (x) {
+            return x.currentHM > 0 && (x.remainingHM <= 20 || x.urgencyCode === 'OVERDUE');
+        });
+
+        var tomorrowList = scheduleList.filter(function (x) {
+            return x.currentHM > 0 && x.remainingHM > 20 && x.remainingHM <= 40;
+        });
+
+        var overdueList = scheduleList.filter(function (x) {
+            return x.currentHM > 0 && (x.urgencyCode === 'OVERDUE' || x.remainingHM <= 0);
+        });
+        var overdueCount = overdueList.length;
+        var monitoringCount = scheduleList.filter(function (x) { return x.currentHM > 0 && x.remainingHM > 40 && x.remainingHM <= 150; }).length;
+
+        setMetricText('pmMetricToday', todayList.length + ' Unit');
+        setMetricText('pmMetricTomorrow', tomorrowList.length + ' Unit');
+        setMetricText('pmMetricOverdue', overdueCount + ' Unit');
+        var pmHistCount = (globalPMLogs && globalPMLogs.length > 0) ? globalPMLogs.length : 0;
+        setMetricText('pmMetricHistoryCount', pmHistCount + ' Log');
+        setMetricText('pmMetricTotal', scheduleList.length + ' Unit');
+        setMetricText('pmScheduleBadgeCount', scheduleList.length);
+
+        if ((!globalPMLogs || globalPMLogs.length === 0) && typeof google !== 'undefined' && google.script && google.script.run && !window._hasFetchedInitialPMLogs) {
+            window._hasFetchedInitialPMLogs = true;
+            fetchAndRenderPMLogs();
+        }
+
+        setMetricText('pmTodayBadgeCount', todayList.length + ' Unit');
+        setMetricText('pmTomorrowBadgeCount', tomorrowList.length + ' Unit');
+        setMetricText('pmOverdueBadgeCount', overdueCount + ' Unit');
+
+        var dToday = new Date();
+        var dTomorrow = new Date();
+        dTomorrow.setDate(dToday.getDate() + 1);
+
+        var elLblToday = document.getElementById('pmTodayDateLabel');
+        if (elLblToday) elLblToday.textContent = formatDateDDMMYYYY(dToday);
+
+        var elLblTomorrow = document.getElementById('pmTomorrowDateLabel');
+        if (elLblTomorrow) elLblTomorrow.textContent = formatDateDDMMYYYY(dTomorrow);
+
+        renderSpotlightPMContainers(todayList, tomorrowList, overdueList);
+        renderPMScheduleRows(scheduleList);
+    }
+
+    function renderSpotlightPMContainers(todayList, tomorrowList, overdueList) {
+        var cToday = document.getElementById('pmTodayListContainer');
+        var cTomorrow = document.getElementById('pmTomorrowListContainer');
+        var cOverdue = document.getElementById('pmOverdueListContainer');
+
+        if (cToday) {
+            if (!todayList || todayList.length === 0) {
+                cToday.innerHTML = '<div style="text-align: center; padding: 14px; font-size: 11.5px; color: var(--text-muted);">✅ Tidak ada unit jatuh tempo PM hari ini (Semua unit aman).</div>';
+            } else {
+                var hToday = '';
+                todayList.forEach(function (item) {
+                    var safeU = escapeHtml(item.noUnit);
+                    var safeM = escapeHtml(item.model);
+                    var sisaTxt = item.remainingHM <= 0 ? ('Lewat ' + Math.abs(item.remainingHM).toFixed(1) + ' Jam') : ('Sisa ' + item.remainingHM.toFixed(1) + ' Jam');
+                    hToday += '<div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: var(--radius-sm); padding: 8px 12px; gap: 8px;">' +
+                        '<div>' +
+                        '<div style="display: flex; align-items: center; gap: 6px;">' +
+                        '<strong style="color: #ffffff; font-size: 13px;">' + safeU + '</strong>' +
+                        '<span style="font-size: 11px; color: var(--text-muted);">(' + safeM + ')</span>' +
+                        '<span style="font-size: 10px; font-weight: 800; background: rgba(245, 158, 11, 0.15); color: var(--accent-orange); padding: 1px 6px; border-radius: 3px; border: 1px solid rgba(245, 158, 11, 0.3);">' + escapeHtml(item.pmType) + '</span>' +
+                        '</div>' +
+                        '<div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">' +
+                        'HM: ' + item.currentHM.toFixed(1) + ' · Target: ' + item.targetPMHM.toFixed(1) + ' · <strong style="color: #f87171;">' + sisaTxt + '</strong>' +
+                        '</div>' +
+                        '</div>' +
+                        '<button type="button" class="btn-submit" style="padding: 4px 10px; font-size: 11px; white-space: nowrap; flex-shrink: 0;" onclick="applyUnitToPMForm(\'' + safeU + '\', \'' + escapeHtml(item.pmType) + '\', ' + item.currentHM + ')">+ Input PM</button>' +
+                        '</div>';
+                });
+                cToday.innerHTML = hToday;
+            }
+        }
+
+        if (cTomorrow) {
+            if (!tomorrowList || tomorrowList.length === 0) {
+                cTomorrow.innerHTML = '<div style="text-align: center; padding: 14px; font-size: 11.5px; color: var(--text-muted);">ℹ️ Tidak ada unit dalam proyeksi PM besok (&le; 40 Jam).</div>';
+            } else {
+                var hTomorrow = '';
+                tomorrowList.forEach(function (item) {
+                    var safeU = escapeHtml(item.noUnit);
+                    var safeM = escapeHtml(item.model);
+                    hTomorrow += '<div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: var(--radius-sm); padding: 8px 12px; gap: 8px;">' +
+                        '<div>' +
+                        '<div style="display: flex; align-items: center; gap: 6px;">' +
+                        '<strong style="color: #ffffff; font-size: 13px;">' + safeU + '</strong>' +
+                        '<span style="font-size: 11px; color: var(--text-muted);">(' + safeM + ')</span>' +
+                        '<span style="font-size: 10px; font-weight: 800; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 1px 6px; border-radius: 3px; border: 1px solid rgba(56, 189, 248, 0.3);">' + escapeHtml(item.pmType) + '</span>' +
+                        '</div>' +
+                        '<div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">' +
+                        'HM: ' + item.currentHM.toFixed(1) + ' · Target: ' + item.targetPMHM.toFixed(1) + ' · <strong style="color: #fbbf24;">Sisa ' + item.remainingHM.toFixed(1) + ' Jam</strong>' +
+                        '</div>' +
+                        '</div>' +
+                        '<button type="button" class="btn-secondary" style="padding: 4px 10px; font-size: 11px; color: var(--accent-orange); border-color: rgba(245, 158, 11, 0.4); white-space: nowrap; flex-shrink: 0;" onclick="applyUnitToPMForm(\'' + safeU + '\', \'' + escapeHtml(item.pmType) + '\', ' + item.currentHM + ')">+ Siapkan Part</button>' +
+                        '</div>';
+                });
+                cTomorrow.innerHTML = hTomorrow;
+            }
+        }
+
+        if (cOverdue) {
+            if (!overdueList || overdueList.length === 0) {
+                cOverdue.innerHTML = '<div style="text-align: center; padding: 14px; font-size: 11.5px; color: var(--text-muted);">✅ Tidak ada unit jatuh tempo (overdue). Semua unit aman.</div>';
+            } else {
+                var hOverdue = '';
+                overdueList.forEach(function (item) {
+                    var safeU = escapeHtml(item.noUnit);
+                    var safeM = escapeHtml(item.model);
+                    var sisaTxt = 'Lewat ' + Math.abs(item.remainingHM).toFixed(1) + ' Jam';
+                    hOverdue += '<div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: var(--radius-sm); padding: 8px 12px; gap: 8px;">' +
+                        '<div>' +
+                        '<div style="display: flex; align-items: center; gap: 6px;">' +
+                        '<strong style="color: #ffffff; font-size: 13px;">' + safeU + '</strong>' +
+                        '<span style="font-size: 11px; color: var(--text-muted);">(' + safeM + ')</span>' +
+                        '<span style="font-size: 10px; font-weight: 800; background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 1px 6px; border-radius: 3px; border: 1px solid rgba(239, 68, 68, 0.3);">' + escapeHtml(item.pmType) + '</span>' +
+                        '</div>' +
+                        '<div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">' +
+                        'HM: ' + item.currentHM.toFixed(1) + ' · Target: ' + item.targetPMHM.toFixed(1) + ' · <strong style="color: #ef4444;">' + sisaTxt + '</strong>' +
+                        '</div>' +
+                        '</div>' +
+                        '<button type="button" class="btn-submit" style="padding: 4px 10px; font-size: 11px; white-space: nowrap; flex-shrink: 0;" onclick="applyUnitToPMForm(\'' + safeU + '\', \'' + escapeHtml(item.pmType) + '\', ' + item.currentHM + ')">+ Input PM</button>' +
+                        '</div>';
+                });
+                cOverdue.innerHTML = hOverdue;
+            }
+        }
+    }
+
+    function renderTotalMonitoredList(keyword) {
+        var cTotal = document.getElementById('pmTotalListContainer');
+        if (!cTotal) return;
+
+        if (!globalPMScheduleData || globalPMScheduleData.length === 0) {
+            cTotal.innerHTML = '<div style="text-align: center; padding: 18px; font-size: 11.5px; color: var(--text-muted);">Tidak ada data armada terpantau di Master Data.</div>';
+            return;
+        }
+
+        var kw = (keyword || '').toLowerCase().trim();
+        var filtered = globalPMScheduleData.filter(function (item) {
+            if (!kw) return true;
+            var u = String(item.noUnit || '').toLowerCase();
+            var m = String(item.model || '').toLowerCase();
+            var p = String(item.pmType || '').toLowerCase();
+            return u.indexOf(kw) !== -1 || m.indexOf(kw) !== -1 || p.indexOf(kw) !== -1;
+        });
+
+        var badgeTotal = document.getElementById('pmTotalBadgeCount');
+        if (badgeTotal) {
+            badgeTotal.textContent = filtered.length + ' / ' + globalPMScheduleData.length + ' Unit';
+        }
+
+        if (filtered.length === 0) {
+            cTotal.innerHTML = '<div style="text-align: center; padding: 18px; font-size: 11.5px; color: var(--text-muted);">Tidak ada unit yang cocok dengan pencarian "<strong>' + escapeHtml(keyword) + '</strong>".</div>';
+            return;
+        }
+
+        var html = '';
+        filtered.forEach(function (item) {
+            var safeU = escapeHtml(item.noUnit);
+            var safeM = escapeHtml(item.model);
+            var sisaTxt = item.currentHM <= 0 ? 'Belum Ada HM' : (item.remainingHM <= 0 ? ('Lewat ' + Math.abs(item.remainingHM).toFixed(1) + ' Jam') : ('Sisa ' + item.remainingHM.toFixed(1) + ' Jam'));
+            var sisaColor = item.remainingHM <= 0 ? '#ef4444' : (item.remainingHM <= 20 ? '#f87171' : (item.remainingHM <= 40 ? '#fbbf24' : '#38bdf8'));
+            if (item.currentHM <= 0) sisaColor = 'var(--text-muted)';
+
+            html += '<div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 9px 12px; gap: 8px;">' +
+                '<div>' +
+                '<div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">' +
+                '<strong style="color: #ffffff; font-size: 13px;">' + safeU + '</strong>' +
+                '<span style="font-size: 11px; color: var(--text-muted);">(' + safeM + ')</span>' +
+                '<span style="font-size: 10px; font-weight: 800; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 1px 6px; border-radius: 3px; border: 1px solid rgba(56, 189, 248, 0.3);">' + escapeHtml(item.pmType) + '</span>' +
+                '<span style="font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 3px; ' + (item.badgeStyle || '') + '">' + escapeHtml(item.urgencyLabel || '') + '</span>' +
+                '</div>' +
+                '<div style="font-size: 11px; color: var(--text-dim); margin-top: 3px;">' +
+                'HM Terakhir: ' + (item.currentHM > 0 ? item.currentHM.toFixed(1) : '-') + ' · Target: ' + (item.targetPMHM > 0 ? item.targetPMHM.toFixed(1) : '-') + ' · <strong style="color: ' + sisaColor + ';">' + sisaTxt + '</strong>' +
+                '</div>' +
+                '</div>' +
+                '<button type="button" class="btn-submit" style="padding: 4px 10px; font-size: 11px; white-space: nowrap; flex-shrink: 0;" onclick="applyUnitToPMForm(\'' + safeU + '\', \'' + escapeHtml(item.pmType) + '\', ' + (item.currentHM || 0) + ')">+ Input PM</button>' +
+                '</div>';
+        });
+        cTotal.innerHTML = html;
+    }
+
+    function filterNextPMScheduleTable() {
+        var statusFilter = document.getElementById('pmScheduleStatusFilter') ? document.getElementById('pmScheduleStatusFilter').value : '';
+        var keyword = document.getElementById('pmScheduleSearch') ? document.getElementById('pmScheduleSearch').value.toLowerCase().trim() : '';
+
+        var cardMap = {
+            'HARI_INI': 'pmCardToday',
+            'BESOK': 'pmCardTomorrow',
+            'OVERDUE': 'pmCardOverdue',
+            'TOTAL': 'pmCardTotal',
+            '': 'pmCardTotal'
+        };
+        ['pmCardToday', 'pmCardTomorrow', 'pmCardOverdue', 'pmCardHistory', 'pmCardTotal'].forEach(function (id) {
+            var c = document.getElementById(id);
+            if (c) {
+                c.style.borderColor = '';
+                c.style.boxShadow = '';
+            }
+        });
+        var activeId = cardMap[statusFilter];
+        if (activeId) {
+            var activeCard = document.getElementById(activeId);
+            if (activeCard) {
+                if (statusFilter === 'HARI_INI') {
+                    activeCard.style.borderColor = '#f87171';
+                    activeCard.style.boxShadow = '0 0 0 2px rgba(248, 113, 113, 0.4)';
+                } else if (statusFilter === 'BESOK') {
+                    activeCard.style.borderColor = '#fbbf24';
+                    activeCard.style.boxShadow = '0 0 0 2px rgba(251, 191, 36, 0.4)';
+                } else if (statusFilter === 'OVERDUE') {
+                    activeCard.style.borderColor = '#ef4444';
+                    activeCard.style.boxShadow = '0 0 0 2px rgba(239, 68, 68, 0.4)';
+                } else {
+                    activeCard.style.borderColor = 'var(--accent-orange)';
+                    activeCard.style.boxShadow = '0 0 0 2px rgba(245, 158, 11, 0.3)';
+                }
+            }
+        }
+
+        if (!globalPMScheduleData) return;
+
+        var filtered = globalPMScheduleData.filter(function (item) {
+            var matchStatus = true;
+            if (statusFilter === 'HARI_INI') {
+                matchStatus = (item.currentHM > 0 && (item.remainingHM <= 20 || item.urgencyCode === 'OVERDUE'));
+            } else if (statusFilter === 'BESOK') {
+                matchStatus = (item.currentHM > 0 && item.remainingHM > 20 && item.remainingHM <= 40);
+            } else if (statusFilter === 'OVERDUE') {
+                matchStatus = (item.currentHM > 0 && item.remainingHM <= 0);
+            } else if (statusFilter === 'SEGERA') {
+                matchStatus = (item.currentHM > 0 && item.remainingHM <= 50);
+            } else if (statusFilter === 'MONITORING') {
+                matchStatus = (item.currentHM > 0 && item.remainingHM > 50 && item.remainingHM <= 150);
+            } else if (statusFilter === 'NORMAL') {
+                matchStatus = (item.currentHM > 0 && item.remainingHM > 150);
+            }
+
+            var matchKw = !keyword ||
+                (item.noUnit && item.noUnit.toLowerCase().indexOf(keyword) !== -1) ||
+                (item.model && item.model.toLowerCase().indexOf(keyword) !== -1) ||
+                (item.pmType && item.pmType.toLowerCase().indexOf(keyword) !== -1);
+
+            return matchStatus && matchKw;
+        });
+
+        renderPMScheduleRows(filtered);
+    }
+
+    function renderPMScheduleRows(list) {
+        var tbody = document.getElementById('pmScheduleTableBody');
+        if (!tbody) return;
+
+        if (!list || list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 24px; color: var(--text-muted);">Tidak ada data jadwal PM unit yang cocok.</td></tr>';
+            return;
+        }
+
+        var html = '';
+        list.forEach(function (item, idx) {
+            var safeUnit = escapeHtml(item.noUnit);
+            var safeModel = escapeHtml(item.model);
+            var hmDisplay = item.currentHM > 0 ? item.currentHM.toFixed(1) + ' HM' : '<span style="color:var(--text-dim);">-</span>';
+            var targetDisplay = item.targetPMHM > 0 ? item.targetPMHM.toFixed(1) + ' HM' : '<span style="color:var(--text-dim);">-</span>';
+            var remDisplay = item.currentHM > 0 ? (item.remainingHM <= 0 ? '<strong style="color:#f87171;">Lewat ' + Math.abs(item.remainingHM).toFixed(1) + ' Jam</strong>' : item.remainingHM.toFixed(1) + ' Jam') : '<span style="color:var(--text-dim);">-</span>';
+
+            html += '<tr style="border-bottom: 1px solid var(--border-subtle);">' +
+                '<td style="text-align: center; color: var(--text-dim);">' + (idx + 1) + '</td>' +
+                '<td><strong style="color: var(--text-main); font-size: 13px;">' + safeUnit + '</strong></td>' +
+                '<td style="color: var(--text-muted); font-size: 11.5px;">' + safeModel + '</td>' +
+                '<td style="text-align: center; font-weight: 700; color: var(--text-main);">' + hmDisplay + '</td>' +
+                '<td style="text-align: center; color: var(--text-muted); font-size: 11px;">' + escapeHtml(item.lastDate) + '</td>' +
+                '<td style="text-align: center; font-weight: 700; color: var(--accent-orange);">' + targetDisplay + '</td>' +
+                '<td style="text-align: center;"><span style="background: var(--input-bg); border: 1px solid var(--border-color); padding: 2px 7px; border-radius: 4px; font-weight: 800; font-size: 10.5px; color: var(--text-main);">' + escapeHtml(item.pmType) + '</span></td>' +
+                '<td style="text-align: center; font-weight: 700; color: var(--text-main);">' + remDisplay + '</td>' +
+                '<td style="text-align: center;"><span style="display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 800; letter-spacing: 0.3px; ' + item.badgeStyle + '">' + item.urgencyLabel + '</span></td>' +
+                '<td style="text-align: center;">' +
+                '<button type="button" class="btn-secondary" style="padding: 3px 8px; font-size: 10.5px; color: var(--accent-orange); border-color: rgba(245, 158, 11, 0.4);" onclick="applyUnitToPMForm(\'' + safeUnit + '\', \'' + escapeHtml(item.pmType) + '\', ' + (item.currentHM || 0) + ')">+ Input PM</button>' +
+                '</td>' +
+                '</tr>';
+        });
+
+        tbody.innerHTML = html;
+    }
+
+    function applyUnitToPMForm(noUnit, pmType, currentHM) {
+        if (typeof switchPMSubTab === 'function') {
+            switchPMSubTab('input');
+        }
+
+        var selUnit = document.getElementById('pmNoUnit');
+        if (selUnit) selUnit.value = noUnit;
+
+        var selLevel = document.getElementById('pmLevel');
+        if (selLevel && pmType) {
+            for (var i = 0; i < selLevel.options.length; i++) {
+                if (selLevel.options[i].value === pmType) {
+                    selLevel.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+
+        var inpHM = document.getElementById('pmHM');
+        if (inpHM && currentHM > 0) inpHM.value = currentHM;
+
+        showToast('Unit ' + noUnit + ' (' + pmType + ') siap diinput pada form PM.', 'info');
+        var formEl = document.getElementById('pmForm');
+        if (formEl) formEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function handlePMSubmit(e) {
+        e.preventDefault();
+
+        var inpMek = document.getElementById('pmMekanikInput');
+        if (inpMek && inpMek.value.trim()) addSelectedPMMechanicFromInput();
+
+        var meksVal = document.getElementById('pmMekanik') ? document.getElementById('pmMekanik').value.trim() : '';
+        if (!meksVal) {
+            showToast('Silakan pilih atau tambahkan minimal 1 nama mekanik!', 'error');
+            if (inpMek) inpMek.focus();
+            return;
+        }
+
+        var payload = {
+            tanggal: document.getElementById('pmTanggal') ? document.getElementById('pmTanggal').value : new Date().toISOString().slice(0, 10),
+            jamMulai: document.getElementById('pmJamMulai') ? document.getElementById('pmJamMulai').value : '',
+            jamSelesai: document.getElementById('pmJamSelesai') ? document.getElementById('pmJamSelesai').value : '',
+            noUnit: (document.getElementById('pmNoUnit') ? document.getElementById('pmNoUnit').value : '').trim().toUpperCase(),
+            pmLevel: document.getElementById('pmLevel').value,
+            hmUnit: document.getElementById('pmHM').value,
+            leadMekanik: meksVal,
+            namaMekanik: meksVal,
+            remarks: document.getElementById('pmRemarks').value.trim(),
+            driveFolderId: localStorage.getItem('AE_DRIVE_FOLDER_ID') || '',
+            imagesBase64: (typeof getMultiPhotosBase64 === 'function') ? getMultiPhotosBase64('pm') : (multiPhotosState.pm || []),
+            captions: (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('pm') : []
+        };
+
+        var currentCaptions = (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('pm') : [];
+
+        var optimisticPM = {
+            id: 'PM-' + new Date().getTime(),
+            tanggal: payload.tanggal,
+            jamMulai: payload.jamMulai,
+            jamSelesai: payload.jamSelesai,
+            jam: (payload.jamMulai && payload.jamSelesai) ? (payload.jamMulai + ' - ' + payload.jamSelesai) : '',
+            noUnit: payload.noUnit,
+            pmLevel: payload.pmLevel,
+            hmUnit: payload.hmUnit,
+            namaMekanik: payload.namaMekanik,
+            remarks: payload.remarks,
+            photosList: payload.imagesBase64 || [],
+            photoCaptions: currentCaptions || []
+        };
+        globalPMLogs.unshift(optimisticPM);
+        setMetricText('kpiPM', globalPMLogs.length);
+        setMetricText('pmMetricHistoryCount', globalPMLogs.length + ' Log');
+
+        // INSTANT SINKRONISASI & ELIMINASI UNIT SUDAH PM DARI DAFTAR JADWAL
+        if (typeof renderNextPMScheduleTable === 'function') renderNextPMScheduleTable();
+        if (typeof filterPMHistoryCards === 'function') filterPMHistoryCards();
+        if (typeof updateDashboardPMMetrics === 'function') updateDashboardPMMetrics();
+
+        showToast('Menyimpan log PM dan mengunggah ' + (payload.imagesBase64.length) + ' foto...', 'info');
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(function (res) {
+                    if (res && res.success) {
+                        if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+                            if (res.idPM) {
+                                savePhotoCaptionsMapping(res.idPM, currentCaptions);
+                                savePhotoCaptionsMapping(String(res.idPM).toUpperCase(), currentCaptions);
+                            }
+                            if (payload.noUnit && payload.tanggal) {
+                                savePhotoCaptionsMapping(payload.noUnit + '_' + payload.tanggal, currentCaptions);
+                            }
+                        }
+                        showToast('Log PM berhasil disimpan!', 'success');
+                        document.getElementById('pmForm').reset();
+                        resetMultiPhotos('pm');
+                        clearSelectedPMMechanicTags();
+                        var elPmTgl = document.getElementById('pmTanggal');
+                        if (elPmTgl) elPmTgl.value = new Date().toISOString().slice(0, 10);
+                        renderNextPMScheduleTable();
+                        if (typeof filterPMHistoryCards === 'function') filterPMHistoryCards();
+                        if (typeof updateDashboardPMMetrics === 'function') updateDashboardPMMetrics();
+                    } else {
+                        showToast('Gagal menyimpan: ' + (res ? res.error : 'Error'), 'error');
+                    }
+                })
+                .withFailureHandler(function (err) {
+                    showToast('Koneksi gagal: ' + err.message, 'error');
+                })
+                .submitPMLog(payload);
+        } else {
+            if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+                savePhotoCaptionsMapping(payload.imagesBase64, currentCaptions);
+            }
+            showToast('Log PM disimpan (Offline)', 'success');
+            document.getElementById('pmForm').reset();
+            resetMultiPhotos('pm');
+            clearSelectedPMMechanicTags();
+            var elPmTgl = document.getElementById('pmTanggal');
+            if (elPmTgl) elPmTgl.value = new Date().toISOString().slice(0, 10);
+            renderNextPMScheduleTable();
+            if (typeof filterPMHistoryCards === 'function') filterPMHistoryCards();
+            if (typeof updateDashboardPMMetrics === 'function') updateDashboardPMMetrics();
+        }
+    }
+
+    function fetchAndRenderPMLogs() {
+        var container = document.getElementById('pmHistoryCardsContainer');
+        if (container && (!globalPMLogs || globalPMLogs.length === 0)) {
+            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 28px;">Memuat riwayat pelaksanaan PM...</div>';
+        }
+
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+                .withSuccessHandler(function (res) {
+                    if (res && res.success && Array.isArray(res.logs)) {
+                        globalPMLogs = (typeof sortListByDateDescending === 'function')
+                            ? sortListByDateDescending(res.logs, 'tanggal')
+                            : res.logs;
+                    } else if (res && res.success) {
+                        globalPMLogs = [];
+                    }
+                    setMetricText('kpiPM', globalPMLogs.length);
+                    setMetricText('pmMetricHistoryCount', globalPMLogs.length + ' Log');
+                    filterPMHistoryCards();
+                    if (typeof updateDashboardPMMetrics === 'function') updateDashboardPMMetrics();
+                    if (typeof renderNextPMScheduleTable === 'function') renderNextPMScheduleTable();
+                })
+                .withFailureHandler(function (err) {
+                    console.error('Gagal mengambil data PM dari spreadsheet:', err);
+                    if (!globalPMLogs) globalPMLogs = [];
+                    setMetricText('kpiPM', globalPMLogs.length);
+                    setMetricText('pmMetricHistoryCount', globalPMLogs.length + ' Log');
+                    filterPMHistoryCards();
+                    if (typeof updateDashboardPMMetrics === 'function') updateDashboardPMMetrics();
+                    if (typeof renderNextPMScheduleTable === 'function') renderNextPMScheduleTable();
+                })
+                .getPMLogs();
+        } else {
+            if (!globalPMLogs) globalPMLogs = [];
+            setMetricText('kpiPM', globalPMLogs.length);
+            setMetricText('pmMetricHistoryCount', globalPMLogs.length + ' Log');
+            filterPMHistoryCards();
+            if (typeof updateDashboardPMMetrics === 'function') updateDashboardPMMetrics();
+            if (typeof renderNextPMScheduleTable === 'function') renderNextPMScheduleTable();
+        }
+    }
+
+    function filterPMHistoryCards() {
+        var levelFilter = document.getElementById('pmHistoryLevelFilter') ? document.getElementById('pmHistoryLevelFilter').value : '';
+        var keyword = document.getElementById('pmHistorySearchInput') ? document.getElementById('pmHistorySearchInput').value.toLowerCase().trim() : '';
+
+        var filtered = (globalPMLogs || []).filter(function (item) {
+            var matchLevel = !levelFilter || (normalizePMLevel(item.pmLevel) === normalizePMLevel(levelFilter));
+            var matchKw = !keyword ||
+                (item.noUnit && item.noUnit.toLowerCase().indexOf(keyword) !== -1) ||
+                (item.namaMekanik && item.namaMekanik.toLowerCase().indexOf(keyword) !== -1) ||
+                (item.remarks && item.remarks.toLowerCase().indexOf(keyword) !== -1) ||
+                (item.pmLevel && item.pmLevel.toLowerCase().indexOf(keyword) !== -1);
+            return matchLevel && matchKw;
+        });
+
+        if (typeof sortListByDateDescending === 'function') {
+            filtered = sortListByDateDescending(filtered, 'tanggal');
+        }
+
+        window._currentFilteredPMHistoryList = filtered;
+        renderPMHistoryCards(filtered);
+    }
+
+    function renderPMHistoryCards(list) {
+        var container = document.getElementById('pmHistoryCardsContainer');
+        var badgeCount = document.getElementById('pmHistoryModalBadge');
+        if (badgeCount) badgeCount.textContent = (list ? list.length : 0) + ' LOG';
+        if (!container) return;
+
+        window._currentFilteredPMHistoryList = list || [];
+
+        if (!list || list.length === 0) {
+            container.innerHTML = '<div style="text-align: center; padding: 36px 16px; color: var(--text-muted); font-size: 12.5px; border: 1px dashed var(--border-color); border-radius: var(--radius-md);">' +
+                '<div style="font-size: 24px; margin-bottom: 6px;">📋</div>Belum ada riwayat pelaksanaan Preventive Maintenance yang sesuai.</div>';
+            return;
+        }
+
+        var tableHtml = '<div style="overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); background: #ffffff;">' +
+            '<table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; min-width: 780px; background: #ffffff; table-layout: fixed;">' +
+            '<thead>' +
+            '<tr style="background: #1e293b; color: #ffffff; border-bottom: 2px solid #334155;">' +
+            '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 14%; min-width: 110px;">TANGGAL</th>' +
+            '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 16%; min-width: 120px;">NOMOR UNIT</th>' +
+            '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 12%; min-width: 90px;">HM</th>' +
+            '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 18%; min-width: 140px;">KATEGORI (LEVEL PM)</th>' +
+            '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: left; width: 28%; min-width: 180px;">RINCIAN TINDAKAN</th>' +
+            '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 12%; min-width: 90px;">DETAIL</th>' +
+            '</tr>' +
+            '</thead>' +
+            '<tbody>';
+
+        list.forEach(function (item, idx) {
+            var safeUnit = escapeHtml(item.noUnit || '-');
+            var rawLevel = item.pmLevel || 'PM1';
+            var safeLevel = escapeHtml(normalizePMLevel(rawLevel));
+            var rawRemarks = String(item.remarks || '').trim();
+            var cleanRemarks = rawRemarks;
+            if (!cleanRemarks || /#(ERROR!|VALUE!|REF!|NAME\?|N\/A)/i.test(cleanRemarks)) {
+                cleanRemarks = 'Servis berkala sesuai checklist ' + safeLevel;
+            }
+            var safeRemarks = escapeHtml(cleanRemarks);
+            var safeDate = escapeHtml(item.tanggal ? formatDateDDMMYYYY(item.tanggal) : '-');
+            var safeTime = escapeHtml(item.jam || (item.jamMulai + (item.jamSelesai ? ' - ' + item.jamSelesai : '')) || '');
+
+            var rawHM = item.hmUnit !== undefined && item.hmUnit !== null && item.hmUnit !== '' ? Number(item.hmUnit) : NaN;
+            var hmDisplay = !isNaN(rawHM) ? rawHM.toLocaleString('id-ID') : (escapeHtml(item.hmUnit || '-'));
+
+            var unitObj = (globalUnits || []).find(function (u) { return u.noUnit === item.noUnit; });
+            var modelStr = unitObj && unitObj.model ? escapeHtml(unitObj.model) : '';
+
+            var normLevel = normalizePMLevel(safeLevel);
+            var badgeLevelColor = 'background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.4);';
+            if (normLevel === 'PM4') {
+                badgeLevelColor = 'background: rgba(239, 68, 68, 0.15); color: #dc2626; border: 1px solid rgba(239, 68, 68, 0.4);';
+            } else if (normLevel === 'PM3') {
+                badgeLevelColor = 'background: rgba(168, 85, 247, 0.15); color: #7c3aed; border: 1px solid rgba(168, 85, 247, 0.4);';
+            } else if (normLevel === 'PM2') {
+                badgeLevelColor = 'background: rgba(56, 189, 248, 0.15); color: #0284c7; border: 1px solid rgba(56, 189, 248, 0.4);';
+            }
+
+            var rowBg = idx % 2 === 0 ? 'background: #ffffff;' : 'background: #f8fafc;';
+
+            tableHtml += '<tr style="' + rowBg + ' border-bottom: 1px solid #e2e8f0; transition: background 0.15s;" onmouseover="this.style.background=\'#f1f5f9\'" onmouseout="this.style.background=\'' + (idx % 2 === 0 ? '#ffffff' : '#f8fafc') + '\'">' +
+                '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+                '<div style="font-weight: 700; color: #1e293b; font-size: 12px;">' + safeDate + '</div>' +
+                '</td>' +
+                '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+                '<div style="font-weight: 800; color: #0f172a; font-size: 12.5px; letter-spacing: 0.3px;">' + safeUnit + '</div>' +
+                '</td>' +
+                '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+                '<span style="font-weight: 800; color: #d97706; font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, monospace;">' + hmDisplay + '</span>' +
+                '</td>' +
+                '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+                '<span style="display: inline-block; padding: 3px 9px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px; ' + badgeLevelColor + '">' + safeLevel + '</span>' +
+                '</td>' +
+                '<td style="padding: 10px 10px; text-align: left; vertical-align: middle;">' +
+                '<div style="font-size: 12px; font-weight: 600; color: #1e293b; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis;" title="' + safeRemarks + '">' + safeRemarks + '</div>' +
+                '</td>' +
+                '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+                '<button type="button" class="btn-secondary" style="padding: 4px 12px; font-size: 11px; font-weight: 700; border-radius: 6px; color: #0284c7; border: 1.5px solid #0284c7; background: #f0f9ff; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background=\'#e0f2fe\'" onmouseout="this.style.background=\'#f0f9ff\'" onclick="openDetailPMModal(' + idx + ')">Detail</button>' +
+                '</td>' +
+                '</tr>';
+        });
+
+        tableHtml += '</tbody></table></div>';
+        container.innerHTML = tableHtml;
+    }
+
+    function openDetailPMModal(idx) {
+        window._currentActiveDetailPMIdx = idx;
+        var list = window._currentFilteredPMHistoryList || globalPMLogs || [];
+        var item = list[idx];
+        if (!item) return;
+
+        var elUnit = document.getElementById('pmDetailUnit');
+        var elModel = document.getElementById('pmDetailModel');
+        var elBadge = document.getElementById('pmDetailLevelBadge');
+        var elTgl = document.getElementById('pmDetailTanggal');
+        var elWaktu = document.getElementById('pmDetailWaktu');
+        var elHM = document.getElementById('pmDetailHM');
+        var elMek = document.getElementById('pmDetailMekanik');
+        var elRemarks = document.getElementById('pmDetailRemarks');
+        var elPhoto = document.getElementById('pmDetailPhotoContainer');
+
+        var safeUnit = escapeHtml(item.noUnit || '-');
+        var unitObj = (globalUnits || []).find(function (u) { return u.noUnit === item.noUnit; });
+        var modelStr = unitObj && unitObj.model ? ('(' + escapeHtml(unitObj.model) + ')') : '(-)';
+        var rawLevel = item.pmLevel || 'PM1';
+        var safeLevel = escapeHtml(normalizePMLevel(rawLevel));
+        var safeDate = item.tanggal ? formatDateDDMMYYYY(item.tanggal) : '-';
+        var safeTime = item.jam || (item.jamMulai + (item.jamSelesai ? ' - ' + item.jamSelesai : '')) || '-';
+        var rawHM = item.hmUnit !== undefined && item.hmUnit !== null && item.hmUnit !== '' ? Number(item.hmUnit) : NaN;
+        var hmStr = !isNaN(rawHM) ? (rawHM.toLocaleString('id-ID') + ' HM') : (item.hmUnit ? (item.hmUnit + ' HM') : '-');
+
+        if (elUnit) elUnit.textContent = safeUnit;
+        if (elModel) elModel.textContent = modelStr;
+        if (elBadge) {
+            elBadge.textContent = safeLevel;
+            var normLevel = normalizePMLevel(safeLevel);
+            var badgeLevelColor = 'background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35);';
+            if (normLevel === 'PM4') {
+                badgeLevelColor = 'background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4);';
+            } else if (normLevel === 'PM3') {
+                badgeLevelColor = 'background: rgba(168, 85, 247, 0.18); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4);';
+            } else if (normLevel === 'PM2') {
+                badgeLevelColor = 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35);';
+            }
+            elBadge.setAttribute('style', 'font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 4px; ' + badgeLevelColor);
+        }
+        if (elTgl) elTgl.textContent = safeDate;
+        if (elWaktu) elWaktu.textContent = safeTime;
+        if (elHM) elHM.textContent = hmStr;
+        if (elMek) elMek.textContent = item.namaMekanik || '-';
+        var modalRemarks = String(item.remarks || '').trim();
+        if (!modalRemarks || /#(ERROR!|VALUE!|REF!|NAME\?|N\/A)/i.test(modalRemarks)) {
+            modalRemarks = 'Servis berkala unit ' + safeUnit + ' sesuai checklist ' + safeLevel;
+        }
+        if (elRemarks) elRemarks.textContent = modalRemarks;
+
+        if (elPhoto) {
+            elPhoto.innerHTML = '';
+            var photoEntries = [];
+
+            if (item.photosList && Array.isArray(item.photosList) && item.photosList.length > 0) {
+                item.photosList.forEach(function (u, i) {
+                    var cap = (item.photoCaptions && item.photoCaptions[i]) || '';
+                    photoEntries.push({ url: u, caption: cap });
+                });
+            } else if (item.urlFoto) {
+                var rawEntries = String(item.urlFoto).split(/(?:,\s*|\r?\n)+/).map(function (e) { return e.trim(); }).filter(Boolean);
+                rawEntries.forEach(function (entry) {
+                    var clean = entry.indexOf('|') !== -1 ? entry.split('|')[0].trim() : entry.split(/\s+/)[0].trim();
+                    var cap = entry.indexOf('|') !== -1 ? entry.substring(entry.indexOf('|') + 1).trim() : '';
+                    if (clean.length > 10 && (clean.indexOf('http') === 0 || clean.indexOf('data:image') === 0)) {
+                        if (!photoEntries.some(function(p) { return p.url === clean; })) {
+                            photoEntries.push({ url: clean, caption: cap });
+                        }
+                    }
+                });
+            }
+
+            if (photoEntries.length > 0) {
+                var galleryHtml = '<div style="display: flex; gap: 8px; flex-wrap: wrap;">';
+                photoEntries.forEach(function (pObj, idx) {
+                    var directImg = (typeof getDirectDriveImageUrl === 'function') ? getDirectDriveImageUrl(pObj.url) : pObj.url;
+                    var capText = pObj.caption || (typeof getPhotoCaption === 'function' ? getPhotoCaption(pObj.url, idx, item) : '');
+                    galleryHtml += '<div style="display: flex; flex-direction: column; align-items: center; gap: 4px; border: 1.5px solid var(--border-color); padding: 5px; border-radius: 6px; background: var(--card-bg-subtle); width: 110px; box-sizing: border-box;">' +
+                        '<div style="cursor: pointer; position: relative; width: 100%; display: flex; justify-content: center;" onclick="if(typeof openImageModal===\'function\'){ openImageModal(\'' + escapeHtml(directImg) + '\', \'Foto PM ' + safeUnit + '\'); } else { window.open(\'' + escapeHtml(directImg) + '\', \'_blank\'); }" title="Klik untuk memperbesar">' +
+                        '<img src="' + escapeHtml(directImg) + '" alt="Dokumentasi PM" style="height: 80px; width: 98px; border-radius: 3px; object-fit: cover; display: block;" onerror="this.onerror=null; this.src=\'https://placehold.co/100x100/0a1120/94a3b8?text=Foto+PM\';">' +
+                        '</div>' +
+                        '<div style="font-size: 8.5px; font-weight: 700; color: var(--text-main); text-align: center; word-break: break-word; line-height: 1.25; margin-top: 2px; max-width: 100%;">' + escapeHtml(capText || ('Foto #' + (idx + 1))) + '</div>' +
+                        '</div>';
+                });
+                galleryHtml += '</div>';
+                elPhoto.innerHTML = galleryHtml;
+            } else {
+                elPhoto.innerHTML = '<span style="font-size: 11.5px; color: var(--text-muted); font-style: italic;">Tidak ada lampiran foto dokumentasi.</span>';
+            }
+        }
+
+        var detailModal = document.getElementById('viewPMDetailModal');
+        if (detailModal) {
+            detailModal.classList.add('active');
+        }
+    }
+
+    function closeDetailPMModal() {
+        var detailModal = document.getElementById('viewPMDetailModal');
+        if (detailModal) {
+            detailModal.classList.remove('active');
+        }
+    }
+
+    function promptDeleteCurrentPMRecord() {
+        var list = window._currentFilteredPMHistoryList || globalPMLogs || [];
+        var idx = window._currentActiveDetailPMIdx;
+        if (typeof idx !== 'number' || idx < 0 || !list || !list[idx]) {
+            showToast('Pilih data PM yang valid untuk dihapus.', 'warning');
+            return;
+        }
+        var item = list[idx];
+
+        var inp = document.getElementById('deleteTargetPMIdx');
+        if (inp) inp.value = idx;
+
+        var txt = document.getElementById('deletePMConfirmText');
+        if (txt) {
+            var safeUnit = escapeHtml(item.noUnit || '-');
+            var safeLevel = escapeHtml(normalizePMLevel(item.pmLevel || 'PM1'));
+            var safeDate = item.tanggal ? formatDateDDMMYYYY(item.tanggal) : '-';
+            txt.innerHTML = 'Apakah Anda yakin ingin menghapus data Preventive Maintenance <strong>' + safeLevel + '</strong> untuk unit <strong>' + safeUnit + '</strong> (Tanggal: <strong>' + safeDate + '</strong>) secara permanen dari database? Data yang dihapus tidak dapat dipulihkan.';
+        }
+
+        var modal = document.getElementById('deletePMConfirmModal');
+        if (modal) modal.classList.add('active');
+    }
+    window.promptDeleteCurrentPMRecord = promptDeleteCurrentPMRecord;
+
+    function closeDeletePMConfirmModal() {
+        var modal = document.getElementById('deletePMConfirmModal');
+        if (modal) modal.classList.remove('active');
+    }
+    window.closeDeletePMConfirmModal = closeDeletePMConfirmModal;
+
+    function executeDeletePMLog() {
+        var inp = document.getElementById('deleteTargetPMIdx');
+        var idx = inp ? parseInt(inp.value, 10) : -1;
+        var list = window._currentFilteredPMHistoryList || globalPMLogs || [];
+        if (idx < 0 || !list || idx >= list.length) {
+            closeDeletePMConfirmModal();
+            return;
+        }
+
+        var targetItem = list[idx];
+        var safeUnit = targetItem.noUnit || '-';
+        var safeLevel = normalizePMLevel(targetItem.pmLevel || 'PM1');
+
+        // Cari index aktual di globalPMLogs jika menggunakan list terfilter
+        var actualGlobalIdx = globalPMLogs ? globalPMLogs.indexOf(targetItem) : -1;
+        if (actualGlobalIdx !== -1) {
+            globalPMLogs.splice(actualGlobalIdx, 1);
+        } else if (list === globalPMLogs) {
+            globalPMLogs.splice(idx, 1);
+        }
+
+        // Hapus dari list terfilter jika ada
+        if (window._currentFilteredPMHistoryList && window._currentFilteredPMHistoryList !== globalPMLogs) {
+            var fIdx = window._currentFilteredPMHistoryList.indexOf(targetItem);
+            if (fIdx !== -1) window._currentFilteredPMHistoryList.splice(fIdx, 1);
+        }
+
+        // Sinkronisasi in-memory cache jika ada
+        if (typeof appDataCache !== 'undefined' && appDataCache && appDataCache['tab-pm']) {
+            appDataCache['tab-pm'] = globalPMLogs;
+        }
+
+        closeDeletePMConfirmModal();
+        closeDetailPMModal();
+
+        // Refresh UI
+        if (typeof renderPMHistoryCards === 'function') {
+            renderPMHistoryCards(window._currentFilteredPMHistoryList || globalPMLogs || []);
+        }
+        if (typeof updateDashboardPMMetrics === 'function') {
+            updateDashboardPMMetrics();
+        }
+
+        showToast('Menghapus log PM unit ' + safeUnit + ' dari database...', 'info');
+
+        if (typeof google !== 'undefined' && google.script && google.script.run && google.script.run.deletePMLog) {
+            google.script.run
+                .withSuccessHandler(function (res) {
+                    if (res && res.success) {
+                        showToast('Log PM ' + safeUnit + ' (' + safeLevel + ') berhasil dihapus secara permanen.', 'success');
+                    } else {
+                        showToast('Gagal menghapus log PM: ' + (res ? res.error : 'Terjadi kesalahan server'), 'error');
+                        if (typeof fetchAndRenderPMLogs === 'function') fetchAndRenderPMLogs();
+                    }
+                })
+                .withFailureHandler(function (err) {
+                    showToast('Koneksi gagal menghapus log PM: ' + (err ? err.message : 'Error'), 'error');
+                    if (typeof fetchAndRenderPMLogs === 'function') fetchAndRenderPMLogs();
+                })
+                .deletePMLog(targetItem);
+        } else {
+            showToast('Log PM ' + safeUnit + ' berhasil dihapus (Mode Offline).', 'success');
+        }
+    }
+    window.executeDeletePMLog = executeDeletePMLog;
+
+    function openPMHistoryModal() {
+        var modal = document.getElementById('pmHistoryModal');
+        if (modal) {
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        fetchAndRenderPMLogs();
+    }
+
+    function closePMSpotlightPanel() {
+        var spotSection = document.getElementById('pmSpotlightSection');
+        var boxToday = document.getElementById('pmTodaySpotlightBox');
+        var boxTomorrow = document.getElementById('pmTomorrowSpotlightBox');
+        var boxOverdue = document.getElementById('pmOverdueSpotlightBox');
+        var boxTotal = document.getElementById('pmTotalSpotlightBox');
+        if (spotSection) spotSection.style.display = 'none';
+        if (boxToday) boxToday.style.display = 'none';
+        if (boxTomorrow) boxTomorrow.style.display = 'none';
+        if (boxOverdue) boxOverdue.style.display = 'none';
+        if (boxTotal) boxTotal.style.display = 'none';
+    }
+
+    function filterPMCardStatus(status) {
+        var sel = document.getElementById('pmScheduleStatusFilter');
+        var spotSection = document.getElementById('pmSpotlightSection');
+        var boxToday = document.getElementById('pmTodaySpotlightBox');
+        var boxTomorrow = document.getElementById('pmTomorrowSpotlightBox');
+        var boxOverdue = document.getElementById('pmOverdueSpotlightBox');
+        var boxTotal = document.getElementById('pmTotalSpotlightBox');
+
+        // Cek apakah sedang toggle off (kartu yang sama diklik ulang saat spotlight aktif)
+        var isTogglingOff = false;
+        if (status === 'HARI_INI' && spotSection && spotSection.style.display !== 'none' && boxToday && boxToday.style.display !== 'none') {
+            isTogglingOff = true;
+        } else if (status === 'BESOK' && spotSection && spotSection.style.display !== 'none' && boxTomorrow && boxTomorrow.style.display !== 'none') {
+            isTogglingOff = true;
+        } else if (status === 'OVERDUE' && spotSection && spotSection.style.display !== 'none' && boxOverdue && boxOverdue.style.display !== 'none') {
+            isTogglingOff = true;
+        } else if ((status === 'TOTAL' || status === '') && spotSection && spotSection.style.display !== 'none' && boxTotal && boxTotal.style.display !== 'none') {
+            isTogglingOff = true;
+        }
+
+        if (isTogglingOff) {
+            closePMSpotlightPanel();
+            if (sel) {
+                sel.value = '';
+                filterNextPMScheduleTable();
+            }
+            return;
+        }
+
+        if (sel) {
+            sel.value = status;
+            filterNextPMScheduleTable();
+        }
+
+        if (spotSection) {
+            if (status === 'HARI_INI') {
+                spotSection.style.display = 'grid';
+                if (boxToday) boxToday.style.display = 'block';
+                if (boxTomorrow) boxTomorrow.style.display = 'none';
+                if (boxOverdue) boxOverdue.style.display = 'none';
+                if (boxTotal) boxTotal.style.display = 'none';
+                spotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            } else if (status === 'BESOK') {
+                spotSection.style.display = 'grid';
+                if (boxTomorrow) boxTomorrow.style.display = 'block';
+                if (boxToday) boxToday.style.display = 'none';
+                if (boxOverdue) boxOverdue.style.display = 'none';
+                if (boxTotal) boxTotal.style.display = 'none';
+                spotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            } else if (status === 'OVERDUE') {
+                spotSection.style.display = 'grid';
+                if (boxOverdue) boxOverdue.style.display = 'block';
+                if (boxToday) boxToday.style.display = 'none';
+                if (boxTomorrow) boxTomorrow.style.display = 'none';
+                if (boxTotal) boxTotal.style.display = 'none';
+                spotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            } else if (status === 'TOTAL' || status === '') {
+                spotSection.style.display = 'grid';
+                if (boxTotal) boxTotal.style.display = 'block';
+                if (boxToday) boxToday.style.display = 'none';
+                if (boxTomorrow) boxTomorrow.style.display = 'none';
+                if (boxOverdue) boxOverdue.style.display = 'none';
+
+                var searchInput = document.getElementById('pmTotalSearchInput');
+                if (searchInput) {
+                    searchInput.value = '';
+                }
+                renderTotalMonitoredList('');
+                spotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                if (searchInput) {
+                    setTimeout(function () { searchInput.focus(); }, 150);
+                }
+                return;
+            } else {
+                closePMSpotlightPanel();
+            }
+        }
+    }
+
+    function closePMHistoryModal() {
+        var modal = document.getElementById('pmHistoryModal');
+        if (modal) {
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+        closeDetailPMModal();
+    }
+</script>

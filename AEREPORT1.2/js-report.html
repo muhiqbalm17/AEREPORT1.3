@@ -1,0 +1,1035 @@
+<script>
+  /**
+   * ============================================================================
+   * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+   * File: js-report.html (Tab Report Pekerjaan, Multi-Mekanik, & Kartu Unit PDF)
+   * ============================================================================
+   */
+
+  function switchReportSubTab(subTabId) {
+    var btnInput = document.getElementById('subnav-btn-input');
+    var btnLog = document.getElementById('subnav-btn-log');
+    var panelInput = document.getElementById('report-subtab-input');
+    var panelLog = document.getElementById('report-subtab-log');
+
+    var isInput = (subTabId === 'input');
+    var isLog = (subTabId === 'log');
+
+    if (btnInput) {
+      if (isInput) btnInput.classList.add('active');
+      else btnInput.classList.remove('active');
+    }
+    if (btnLog) {
+      if (isLog) btnLog.classList.add('active');
+      else btnLog.classList.remove('active');
+    }
+
+    if (panelInput) {
+      panelInput.style.display = isInput ? 'block' : 'none';
+      panelInput.classList.toggle('active', isInput);
+    }
+    if (panelLog) {
+      panelLog.style.display = isLog ? 'block' : 'none';
+      panelLog.classList.toggle('active', isLog);
+    }
+
+    if (isLog) {
+      try {
+        refreshSubtabReportLog();
+      } catch (err) {
+        console.error('Error saat memuat log riwayat pekerjaan:', err);
+      }
+    }
+  }
+  window.switchReportSubTab = switchReportSubTab;
+
+  function handleMechanicInputKey(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addSelectedMechanicFromInput();
+    }
+  }
+
+  function handleMechanicInputDatalist(e) {
+    var val = e.target.value.trim();
+    if (!val) return;
+    var match = (globalMechanics || []).find(function (m) {
+      return (m.nama && m.nama.toUpperCase() === val.toUpperCase());
+    });
+    if (match) {
+      addMechanicTag(match.nama);
+      e.target.value = '';
+    }
+  }
+
+  function addSelectedMechanicFromInput() {
+    var inp = document.getElementById('repMekanikInput');
+    if (!inp) return;
+    var val = inp.value.trim();
+    if (!val) return;
+
+    var parts = val.split(/[,;&/]+/);
+    parts.forEach(function (p) {
+      var name = p.trim().toUpperCase();
+      if (name) addMechanicTag(name);
+    });
+    inp.value = '';
+    inp.focus();
+  }
+
+  function addMechanicTag(name) {
+    var clean = name.trim().toUpperCase();
+    if (!clean) return;
+    if (selectedMechanicsList.indexOf(clean) !== -1) {
+      showToast('Teknisi ' + clean + ' sudah ada di daftar!', 'info');
+      return;
+    }
+    selectedMechanicsList.push(clean);
+    renderSelectedMechanicTags();
+  }
+
+  function removeSelectedMechanicTag(index) {
+    if (index >= 0 && index < selectedMechanicsList.length) {
+      selectedMechanicsList.splice(index, 1);
+      renderSelectedMechanicTags();
+    }
+  }
+
+  function clearSelectedMechanicTags() {
+    selectedMechanicsList = [];
+    renderSelectedMechanicTags();
+  }
+
+  function renderSelectedMechanicTags() {
+    var container = document.getElementById('repMekanikTagsContainer');
+    var hiddenInp = document.getElementById('repMekanik');
+    if (hiddenInp) hiddenInp.value = selectedMechanicsList.join(', ');
+    if (!container) return;
+    if (selectedMechanicsList.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+    var html = '';
+    selectedMechanicsList.forEach(function (name, idx) {
+      var safeName = escapeHtml(name);
+      html += '<span style="display: inline-flex; align-items: center; gap: 6px; background: var(--card-bg-subtle); border: 1px solid var(--accent-orange); color: var(--text-main); padding: 3px 8px; border-radius: var(--radius-sm); font-size: 11.5px; font-weight: 700;">' +
+        '<span>' + safeName + '</span>' +
+        '<span onclick="removeSelectedMechanicTag(' + idx + ')" style="cursor: pointer; color: #f87171; font-weight: 900; margin-left: 2px; font-size: 13px;" title="Hapus teknisi">&times;</span>' +
+        '</span>';
+    });
+    container.innerHTML = html;
+  }
+
+  function calculateAutoDowntime() {
+    var tMulai = document.getElementById('repJamMulai').value;
+    var tSelesai = document.getElementById('repJamSelesai').value;
+    var inpDt = document.getElementById('repDowntime');
+    if (!tMulai || !tSelesai || !inpDt) return;
+
+    var pM = tMulai.split(':');
+    var pS = tSelesai.split(':');
+    if (pM.length === 2 && pS.length === 2) {
+      var mMulai = parseInt(pM[0], 10) * 60 + parseInt(pM[1], 10);
+      var mSelesai = parseInt(pS[0], 10) * 60 + parseInt(pS[1], 10);
+      var diffMin = mSelesai - mMulai;
+      if (diffMin < 0) diffMin += 1440;
+      var hours = (diffMin / 60).toFixed(1);
+      inpDt.value = hours;
+    }
+  }
+
+  function calculateEditAutoDowntime() {
+    var tMulai = document.getElementById('editRepJamMulai').value;
+    var tSelesai = document.getElementById('editRepJamSelesai').value;
+    var inpDt = document.getElementById('editRepDowntime');
+    if (!tMulai || !tSelesai || !inpDt) return;
+
+    var pM = tMulai.split(':');
+    var pS = tSelesai.split(':');
+    if (pM.length === 2 && pS.length === 2) {
+      var mMulai = parseInt(pM[0], 10) * 60 + parseInt(pM[1], 10);
+      var mSelesai = parseInt(pS[0], 10) * 60 + parseInt(pS[1], 10);
+      var diffMin = mSelesai - mMulai;
+      if (diffMin < 0) diffMin += 1440;
+      var hours = (diffMin / 60).toFixed(1);
+      inpDt.value = hours;
+    }
+  }
+
+  function applyStatusColor(sel) {
+    if (!sel) return;
+    sel.classList.remove('status-select-rfu', 'status-select-continue', 'status-select-waiting');
+    var v = sel.value;
+    if (v === 'RFU') sel.classList.add('status-select-rfu');
+    else if (v === 'CONTINUE') sel.classList.add('status-select-continue');
+    else if (v === 'WAITING SPAREPART' || v === 'WAITING PART') sel.classList.add('status-select-waiting');
+  }
+
+  function handleStatusPartChange(el) {
+    var val = '';
+    if (el && typeof el.value === 'string') {
+      val = el.value.trim().toUpperCase();
+    } else if (el && el.target && typeof el.target.value === 'string') {
+      val = el.target.value.trim().toUpperCase();
+    } else {
+      var elSelect = document.getElementById('repStatusPart');
+      if (elSelect) val = (elSelect.value || '').trim().toUpperCase();
+    }
+
+    if (val === 'BAD') {
+      isRedirectedFromReportToBreakdown = true;
+      showToast('Komponen BAD terdeteksi: Mengalihkan ke formulir Analisa Kerusakan (RCFA)...', 'info');
+
+      var repUnit = document.getElementById('repNoUnit') ? document.getElementById('repNoUnit').value.trim() : '';
+      var repTgl = document.getElementById('repTanggal') ? document.getElementById('repTanggal').value : '';
+      var repCat = document.getElementById('repKategori') ? document.getElementById('repKategori').value : '';
+      var repHM = document.getElementById('repHM') ? document.getElementById('repHM').value : '';
+
+      var brkUnit = document.getElementById('brkNoUnit');
+      var brkTgl = document.getElementById('brkTanggal');
+      var brkKomp = document.getElementById('brkKomponen');
+      var brkStat = document.getElementById('brkStatus');
+      var brkHM = document.getElementById('brkHM');
+
+      if (brkUnit && repUnit) brkUnit.value = repUnit;
+      if (brkTgl && repTgl) brkTgl.value = repTgl;
+      if (brkStat) brkStat.value = 'REPLACE';
+      if (brkHM && repHM) brkHM.value = repHM;
+
+      if (brkKomp && repCat) {
+        brkKomp.value = repCat;
+        if (typeof handleBreakdownPartSelect === 'function') {
+          handleBreakdownPartSelect(brkKomp);
+        }
+      }
+
+      if (typeof switchTab === 'function') {
+        switchTab('breakdown');
+      }
+      if (typeof switchBreakdownSubTab === 'function') {
+        switchBreakdownSubTab('input');
+      }
+
+      setTimeout(function () {
+        var brkForm = document.getElementById('breakdownForm');
+        if (brkForm) {
+          brkForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 150);
+    }
+  }
+  window.handleStatusPartChange = handleStatusPartChange;
+
+  function backToWorkReportTab() {
+    if (typeof switchTab === 'function') switchTab('report');
+    if (typeof switchReportSubTab === 'function') switchReportSubTab('input');
+    isRedirectedFromReportToBreakdown = false;
+    showToast('Kembali ke formulir Report Pekerjaan.', 'info');
+
+    setTimeout(function () {
+      var elStatusPart = document.getElementById('repStatusPart');
+      if (elStatusPart) {
+        elStatusPart.focus();
+        elStatusPart.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 180);
+  }
+  window.backToWorkReportTab = backToWorkReportTab;
+
+  function handleCategorySelectChange(el) { }
+
+  function handleWorkReportSubmit(e) {
+    e.preventDefault();
+
+    var inpMek = document.getElementById('repMekanikInput');
+    if (inpMek && inpMek.value.trim()) addSelectedMechanicFromInput();
+
+    var meksVal = document.getElementById('repMekanik') ? document.getElementById('repMekanik').value.trim() : '';
+    if (!meksVal) {
+      showToast('Silakan pilih atau tambahkan minimal 1 nama teknisi / mekanik!', 'error');
+      if (inpMek) inpMek.focus();
+      return;
+    }
+
+    var btn = document.getElementById('btnSubmitReport');
+    if (typeof setButtonLoading === 'function') {
+      setButtonLoading(btn, true, 'MENYIMPAN REPORT PEKERJAAN...');
+    } else if (btn) {
+      btn.disabled = true;
+    }
+
+    var payload = {
+      status: document.getElementById('repStatusPekerjaan').value,
+      tanggal: document.getElementById('repTanggal').value,
+      jamMulai: document.getElementById('repJamMulai').value,
+      jamSelesai: document.getElementById('repJamSelesai').value,
+      shift: document.getElementById('repShift').value,
+      noUnit: document.getElementById('repNoUnit').value.toUpperCase().trim(),
+      lokasiPekerjaan: document.getElementById('repLokasiPekerjaan').value.trim(),
+      hmUnit: document.getElementById('repHM').value,
+      namaMekanik: meksVal,
+      kategoriPekerjaan: document.getElementById('repKategori').value,
+      statusPart: document.getElementById('repStatusPart').value,
+      downtimeJam: document.getElementById('repDowntime').value || '0',
+      deskripsiPekerjaan: document.getElementById('repDeskripsi').value.trim(),
+      driveFolderId: localStorage.getItem('AE_DRIVE_FOLDER_ID') || '',
+      imagesBase64: (typeof getMultiPhotosBase64 === 'function') ? getMultiPhotosBase64('rep') : (multiPhotosState.rep || []),
+      captions: (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('rep') : []
+    };
+
+    var currentCaptions = (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('rep') : [];
+    var unitObj = globalUnits.find(function (u) { return u.noUnit === payload.noUnit; });
+    payload.modelUnit = unitObj ? unitObj.model : '';
+
+    showToast('Menyimpan laporan pekerjaan dan mengunggah ' + (payload.imagesBase64.length) + ' foto...', 'info');
+
+    var tempId = 'AE-' + new Date().getTime();
+    var optimisticItem = Object.assign({}, payload, {
+      idReport: tempId,
+      jam: payload.jamMulai + ' - ' + payload.jamSelesai,
+      timestamp: new Date().toLocaleString('id-ID'),
+      urlFotoDokumentasi: (payload.imagesBase64 && payload.imagesBase64.length > 0) ? payload.imagesBase64.join(', ') : '',
+      photosList: payload.imagesBase64 || [],
+      photoCaptions: currentCaptions || []
+    });
+    allFilteredReports.unshift(optimisticItem);
+    if (window.globalAllWorkReports && Array.isArray(window.globalAllWorkReports)) {
+      window.globalAllWorkReports.unshift(optimisticItem);
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+          else if (btn) btn.disabled = false;
+          if (res && res.success) {
+            if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+              if (res.reportId) {
+                savePhotoCaptionsMapping(res.reportId, currentCaptions);
+                savePhotoCaptionsMapping(String(res.reportId).toUpperCase(), currentCaptions);
+              }
+              if (payload.noUnit && payload.tanggal) {
+                savePhotoCaptionsMapping(payload.noUnit + '_' + payload.tanggal, currentCaptions);
+              }
+            }
+            showToast('Laporan berhasil disimpan! ID: ' + res.reportId, 'success');
+            document.getElementById('workReportForm').reset();
+            resetMultiPhotos('rep');
+            clearSelectedMechanicTags();
+            document.getElementById('repTanggal').value = new Date().toISOString().slice(0, 10);
+            refreshSubtabReportLog();
+            if (typeof loadDashboardKPI === 'function') loadDashboardKPI();
+          } else {
+            showToast('Gagal menyimpan: ' + (res ? res.error : 'Terjadi kesalahan.'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+          else if (btn) btn.disabled = false;
+          showToast('Koneksi gagal: ' + err.message, 'error');
+        })
+        .submitWorkReport(payload);
+    } else {
+      if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+      else if (btn) btn.disabled = false;
+      if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+        savePhotoCaptionsMapping(payload.imagesBase64, currentCaptions);
+      }
+      showToast('Laporan disimpan (Mode Offline): ' + tempId, 'success');
+      document.getElementById('workReportForm').reset();
+      resetMultiPhotos('rep');
+      clearSelectedMechanicTags();
+      refreshSubtabReportLog();
+      if (typeof loadDashboardKPI === 'function') loadDashboardKPI();
+    }
+  }
+
+  var currentReportPage = 1;
+  var currentReportPageSize = 25;
+  var totalReportPages = 1;
+  var totalReportRecords = 0;
+  var reportSearchDebounceTimer = null;
+
+  function changeReportPage(delta) {
+    var target = currentReportPage + delta;
+    if (target < 1 || (totalReportPages > 0 && target > totalReportPages)) return;
+    currentReportPage = target;
+    refreshSubtabReportLog(true);
+  }
+  window.changeReportPage = changeReportPage;
+
+  function updateReportPaginationUI() {
+    var infoEl = document.getElementById('subtabReportPageInfo');
+    var badgeEl = document.getElementById('reportPageBadge');
+    var btnPrev = document.getElementById('btnReportPrevPage');
+    var btnNext = document.getElementById('btnReportNextPage');
+
+    if (totalReportRecords === 0) {
+      if (infoEl) infoEl.textContent = 'Menampilkan 0 dari 0 riwayat';
+      if (badgeEl) badgeEl.textContent = 'Hal 1 / 1';
+      if (btnPrev) btnPrev.disabled = true;
+      if (btnNext) btnNext.disabled = true;
+      return;
+    }
+
+    var startNum = (currentReportPage - 1) * currentReportPageSize + 1;
+    var endNum = Math.min(currentReportPage * currentReportPageSize, totalReportRecords);
+
+    if (infoEl) infoEl.textContent = 'Menampilkan ' + startNum + ' - ' + endNum + ' dari ' + totalReportRecords + ' riwayat';
+    if (badgeEl) badgeEl.textContent = 'Hal ' + currentReportPage + ' / ' + totalReportPages;
+    if (btnPrev) btnPrev.disabled = (currentReportPage <= 1);
+    if (btnNext) btnNext.disabled = (currentReportPage >= totalReportPages);
+  }
+
+  function handleSubtabLogSearchInput() {
+    clearTimeout(reportSearchDebounceTimer);
+    reportSearchDebounceTimer = setTimeout(function () {
+      currentReportPage = 1;
+      refreshSubtabReportLog(true);
+    }, 350);
+  }
+  window.handleSubtabLogSearchInput = handleSubtabLogSearchInput;
+
+  function filterSubtabReportLog() {
+    currentReportPage = 1;
+    refreshSubtabReportLog(true);
+  }
+  window.filterSubtabReportLog = filterSubtabReportLog;
+
+  function refreshSubtabReportLog(forceRefresh) {
+    var container = document.getElementById('subtabReportTableBody') || document.getElementById('subtabReportCardsContainer');
+    var selCat = document.getElementById('subtabFilterKategori') ? document.getElementById('subtabFilterKategori').value : '';
+    var keyword = document.getElementById('subtabLogSearch') ? document.getElementById('subtabLogSearch').value.trim() : '';
+
+    // Cek in-memory cache jika tidak dipaksa refresh dan tidak ada filter aktif
+    if (!forceRefresh && !selCat && !keyword && typeof appDataCache !== 'undefined' && appDataCache.reports && appDataCache.reports.data && appDataCache.reports.page === currentReportPage) {
+      allFilteredReports = appDataCache.reports.data;
+      totalReportRecords = appDataCache.reports.totalCount;
+      totalReportPages = appDataCache.reports.totalPages;
+      renderSubtabReportCards(allFilteredReports);
+      updateReportPaginationUI();
+      populateUnitPdfSelect();
+      return;
+    }
+
+    if (container) {
+      container.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">Memuat riwayat pekerjaan (Halaman ' + currentReportPage + ')...</td></tr>';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            allFilteredReports = res.reports || [];
+            totalReportRecords = (typeof res.totalCount === 'number') ? res.totalCount : allFilteredReports.length;
+            totalReportPages = res.totalPages || Math.ceil(totalReportRecords / currentReportPageSize) || 1;
+
+            if (typeof appDataCache !== 'undefined') {
+              appDataCache.reports = {
+                data: allFilteredReports,
+                totalCount: totalReportRecords,
+                page: currentReportPage,
+                pageSize: currentReportPageSize,
+                totalPages: totalReportPages,
+                lastFetched: Date.now()
+              };
+            }
+
+            renderSubtabReportCards(allFilteredReports);
+            updateReportPaginationUI();
+            populateUnitPdfSelect();
+          } else {
+            if (container) container.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Gagal memuat log: ' + (res ? res.error : 'Error') + '</td></tr>';
+          }
+        })
+        .withFailureHandler(function (err) {
+          if (container) container.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Error koneksi: ' + err.message + '</td></tr>';
+        })
+        .getWorkReportsPaginated(currentReportPage, currentReportPageSize, selCat, keyword);
+    } else {
+      // Offline fallback mode
+      var filtered = (allFilteredReports || []).slice();
+      totalReportRecords = filtered.length;
+      totalReportPages = Math.ceil(totalReportRecords / currentReportPageSize) || 1;
+      var start = (currentReportPage - 1) * currentReportPageSize;
+      var paginated = filtered.slice(start, start + currentReportPageSize);
+      renderSubtabReportCards(paginated);
+      updateReportPaginationUI();
+      populateUnitPdfSelect();
+    }
+  }
+
+  function renderSubtabReportCards(reports) {
+    var container = document.getElementById('subtabReportTableBody') || document.getElementById('subtabReportCardsContainer');
+    if (!container) return;
+
+    if (!reports || reports.length === 0) {
+      container.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 12.5px;">Tidak ada riwayat pekerjaan yang sesuai kriteria pencarian.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    reports.forEach(function (rep) {
+      var safeDate = escapeHtml(rep.tanggal ? formatDateDDMMYYYY(rep.tanggal) : '-');
+      var safeUnit = escapeHtml(rep.noUnit || '-');
+      var safeHM = rep.hmUnit ? (escapeHtml(rep.hmUnit) + ' HM') : '<span style="color: var(--text-dim);">-</span>';
+      var normCat = (typeof normalizeCategoryName === 'function')
+        ? normalizeCategoryName(rep.kategoriPekerjaan)
+        : (rep.kategoriPekerjaan || '-');
+      var safeCat = escapeHtml(normCat);
+      var rawDesc = rep.deskripsiPekerjaan || '-';
+      var isFormulaErr = typeof rawDesc === 'string' && /#(ERROR!|REF!|VALUE!|N\/A)/i.test(rawDesc);
+      var displayDescHtml = isFormulaErr
+        ? '<span style="color: #f87171; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;" title="Teks diawali simbol formula (+, -, =) di spreadsheet. Buka tombol Detail lalu Edit untuk memperbarui atau hapus simbol di Google Sheets.">⚠️ Format Rumus Bermasalah</span>'
+        : escapeHtml(rawDesc);
+      var safeId = escapeHtml(rep.idReport || '');
+
+      html += '<tr style="border-bottom: 1px solid var(--border-subtle);">' +
+        '<td style="color: var(--text-main); font-size: 12.5px; font-weight: 700; white-space: nowrap;">' + safeDate + '</td>' +
+        '<td><strong style="color: var(--text-main); font-size: 13px;">' + safeUnit + '</strong></td>' +
+        '<td style="text-align: center; font-weight: 700; color: var(--accent-orange); font-size: 12px;">' + safeHM + '</td>' +
+        '<td><strong style="color: var(--accent-orange); font-size: 12px;">' + safeCat + '</strong></td>' +
+        '<td style="max-width: 280px; width: 280px; min-width: 180px; overflow: hidden; word-break: break-word; overflow-wrap: anywhere;" title="' + escapeHtml(rawDesc) + '">' +
+        '<div style="color: var(--text-main); font-size: 11.5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; word-break: break-word; overflow-wrap: anywhere; max-width: 100%;">' + displayDescHtml + '</div>' +
+        '</td>' +
+        '<td style="text-align: center;">' +
+        '<button type="button" class="btn-secondary" style="padding: 4px 10px; font-size: 11px; font-weight: 700;" onclick="openDetailReportModal(\'' + safeId + '\')">Detail</button>' +
+        '</td>' +
+        '</tr>';
+    });
+
+    container.innerHTML = html;
+  }
+
+  function openDetailReportModal(idReport) {
+    var item = (allFilteredReports || []).find(function (r) { return r.idReport === idReport; });
+    if (!item) return;
+
+    document.getElementById('viewModalSubtitle').textContent = 'ID: ' + item.idReport + ' · ' + (item.timestamp || '');
+    document.getElementById('viewModalUnit').textContent = item.noUnit || '-';
+    document.getElementById('viewModalModel').textContent = item.modelUnit || '-';
+    document.getElementById('viewModalTanggalShift').textContent = (item.tanggal ? formatDateDDMMYYYY(item.tanggal) : '-') + ' (' + (item.shift || '-') + ')';
+    document.getElementById('viewModalWaktu').textContent = item.jam || (item.jamMulai + ' - ' + item.jamSelesai) || '-';
+    document.getElementById('viewModalLokasi').textContent = item.lokasiPekerjaan || '-';
+    document.getElementById('viewModalHM').textContent = item.hmUnit ? (item.hmUnit + ' HM') : '-';
+    document.getElementById('viewModalMekanik').textContent = item.namaMekanik || '-';
+    var normCat = (typeof normalizeCategoryName === 'function')
+      ? normalizeCategoryName(item.kategoriPekerjaan)
+      : (item.kategoriPekerjaan || '-');
+    document.getElementById('viewModalKategori').textContent = normCat;
+    var rawModalDesc = item.deskripsiPekerjaan || '-';
+    if (typeof rawModalDesc === 'string' && /#(ERROR!|REF!|VALUE!|N\/A)/i.test(rawModalDesc)) {
+      rawModalDesc = '⚠️ [PERINGATAN FORMAT: Teks pada Google Sheets diawali karakter simbol rumus (+, -, =) sehingga memicu #ERROR!. Anda dapat mengklik tombol "Edit Laporan" di bawah untuk memperbaikinya langsung dari aplikasi, atau tambahkan tanda petik tunggal (\') di Google Sheets.]';
+    }
+    document.getElementById('viewModalDeskripsi').textContent = rawModalDesc;
+    document.getElementById('viewModalDowntime').textContent = 'Total Downtime: ' + (item.downtimeJam || '0') + ' Jam';
+
+    var elStatus = document.getElementById('viewModalStatus');
+    if (elStatus) {
+      elStatus.textContent = item.status || 'RFU';
+      applyStatusColor(elStatus);
+    }
+
+    var photoBox = document.getElementById('viewModalPhotoContainer');
+    if (photoBox) {
+      photoBox.innerHTML = '';
+      var photoEntries = [];
+
+      if (item.photosList && Array.isArray(item.photosList) && item.photosList.length > 0) {
+        item.photosList.forEach(function (u, i) {
+          var cap = (item.photoCaptions && item.photoCaptions[i]) || '';
+          photoEntries.push({ url: u, caption: cap });
+        });
+      } else {
+        var rawPool = [item.urlFotoDokumentasi, item.urlFotoBefore, item.urlFotoAfter].filter(Boolean).join(', ');
+        if (rawPool) {
+          var rawEntries = rawPool.split(/(?:,\s*|\r?\n)+/).map(function (e) { return e.trim(); }).filter(Boolean);
+          rawEntries.forEach(function (entry) {
+            var clean = entry.indexOf('|') !== -1 ? entry.split('|')[0].trim() : entry.split(/\s+/)[0].trim();
+            var cap = entry.indexOf('|') !== -1 ? entry.substring(entry.indexOf('|') + 1).trim() : '';
+            if (clean.length > 10 && (clean.indexOf('http') === 0 || clean.indexOf('data:image') === 0)) {
+              if (!photoEntries.some(function(p) { return p.url === clean; })) {
+                photoEntries.push({ url: clean, caption: cap });
+              }
+            }
+          });
+        }
+      }
+
+      if (photoEntries.length > 0) {
+        photoEntries.forEach(function (pObj, idx) {
+          var directImg = getDirectDriveImageUrl(pObj.url);
+          var capText = pObj.caption || (typeof getPhotoCaption === 'function' ? getPhotoCaption(pObj.url, idx, item) : '');
+          photoBox.innerHTML += '<div style="display: flex; flex-direction: column; align-items: center; gap: 4px; border: 1.5px solid var(--border-color); padding: 5px; border-radius: 6px; background: var(--card-bg-subtle); width: 110px; box-sizing: border-box;">' +
+            '<div style="cursor: pointer; position: relative; width: 100%; display: flex; justify-content: center;" onclick="openImageModal(\'' + directImg + '\')" title="Klik untuk memperbesar gambar">' +
+            '<img src="' + directImg + '" referrerpolicy="no-referrer" style="height: 80px; width: 98px; border-radius: 3px; object-fit: cover; display: block;" onerror="this.onerror=null; this.src=\'https://placehold.co/100x100/0a1120/94a3b8?text=Foto\';">' +
+            '</div>' +
+            '<div style="font-size: 8.5px; font-weight: 700; color: var(--text-main); text-align: center; word-break: break-word; line-height: 1.25; margin-top: 2px; max-width: 100%;">' + escapeHtml(capText || ('Foto #' + (idx + 1))) + '</div>' +
+            '</div>';
+        });
+      } else {
+        photoBox.innerHTML = '<span style="font-size: 11.5px; color: var(--text-dim); font-style: italic;">Tidak ada foto dokumentasi terlampir.</span>';
+      }
+    }
+
+    var btnEdit = document.getElementById('viewModalBtnEditShortcut');
+    if (btnEdit) {
+      btnEdit.onclick = function () {
+        closeDetailReportModal();
+        openEditReportModal(item.idReport);
+      };
+    }
+
+    var modal = document.getElementById('viewReportModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeDetailReportModal() {
+    var modal = document.getElementById('viewReportModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function openEditReportModal(idReport) {
+    var item = (allFilteredReports || []).find(function (r) { return r.idReport === idReport; });
+    if (!item) return;
+
+    document.getElementById('editRepId').value = item.idReport;
+    document.getElementById('editRepStatus').value = item.status || 'RFU';
+    applyStatusColor(document.getElementById('editRepStatus'));
+    document.getElementById('editRepTanggal').value = item.tanggal || '';
+    document.getElementById('editRepJamMulai').value = item.jamMulai || '';
+    document.getElementById('editRepJamSelesai').value = item.jamSelesai || '';
+    document.getElementById('editRepShift').value = item.shift || 'Shift 1 (Siang)';
+    document.getElementById('editRepNoUnit').value = item.noUnit || '';
+    document.getElementById('editRepLokasi').value = item.lokasiPekerjaan || '';
+    document.getElementById('editRepHM').value = item.hmUnit || '';
+    document.getElementById('editRepMekanik').value = item.namaMekanik || '';
+
+    var selCat = document.getElementById('editRepKategori');
+    if (selCat) {
+      selCat.innerHTML = '';
+      var itemNormCat = (typeof normalizeCategoryName === 'function')
+        ? normalizeCategoryName(item.kategoriPekerjaan)
+        : (item.kategoriPekerjaan || '');
+      var cleanCats = [];
+      (globalCategories || []).forEach(function (c) {
+        var norm = (typeof normalizeCategoryName === 'function') ? normalizeCategoryName(c) : String(c).trim();
+        if (norm && norm !== '-' && cleanCats.indexOf(norm) === -1) cleanCats.push(norm);
+      });
+      cleanCats.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        if (c === itemNormCat) opt.selected = true;
+        selCat.appendChild(opt);
+      });
+    }
+
+    document.getElementById('editRepDowntime').value = item.downtimeJam || '0';
+    var editDesc = item.deskripsiPekerjaan || '';
+    if (typeof editDesc === 'string' && /#(ERROR!|REF!|VALUE!|N\/A)/i.test(editDesc)) {
+      editDesc = '';
+    }
+    document.getElementById('editRepDeskripsi').value = editDesc;
+
+    var modal = document.getElementById('editReportModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeEditReportModal() {
+    var modal = document.getElementById('editReportModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function handleEditReportSubmit(e) {
+    e.preventDefault();
+    var payload = {
+      idReport: document.getElementById('editRepId').value,
+      status: document.getElementById('editRepStatus').value,
+      tanggal: document.getElementById('editRepTanggal').value,
+      jamMulai: document.getElementById('editRepJamMulai').value,
+      jamSelesai: document.getElementById('editRepJamSelesai').value,
+      shift: document.getElementById('editRepShift').value,
+      noUnit: document.getElementById('editRepNoUnit').value.toUpperCase().trim(),
+      lokasiPekerjaan: document.getElementById('editRepLokasi').value.trim(),
+      hmUnit: document.getElementById('editRepHM').value,
+      namaMekanik: document.getElementById('editRepMekanik').value.trim(),
+      kategoriPekerjaan: document.getElementById('editRepKategori').value,
+      downtimeJam: document.getElementById('editRepDowntime').value,
+      deskripsiPekerjaan: document.getElementById('editRepDeskripsi').value.trim()
+    };
+
+    var unitObj = globalUnits.find(function (u) { return u.noUnit === payload.noUnit; });
+    payload.modelUnit = unitObj ? unitObj.model : '';
+
+    var idx = allFilteredReports.findIndex(function (r) { return r.idReport === payload.idReport; });
+    if (idx !== -1) {
+      Object.assign(allFilteredReports[idx], payload, {
+        jam: payload.jamMulai + ' - ' + payload.jamSelesai
+      });
+    }
+    if (window.globalAllWorkReports && Array.isArray(window.globalAllWorkReports)) {
+      var gIdx = window.globalAllWorkReports.findIndex(function (r) { return r.idReport === payload.idReport; });
+      if (gIdx !== -1) {
+        Object.assign(window.globalAllWorkReports[gIdx], payload, {
+          jam: payload.jamMulai + ' - ' + payload.jamSelesai
+        });
+      }
+    }
+
+    closeEditReportModal();
+    filterSubtabReportLog();
+    if (typeof loadDashboardKPI === 'function') loadDashboardKPI();
+    showToast('Memperbarui laporan di spreadsheet...', 'info');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            showToast('Laporan ' + payload.idReport + ' berhasil diperbarui!', 'success');
+          } else {
+            showToast('Gagal perbarui: ' + (res ? res.error : 'Error'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          showToast('Error koneksi: ' + err.message, 'error');
+        })
+        .updateWorkReport(payload);
+    }
+  }
+
+  function promptDeleteReport(idReport) {
+    var inp = document.getElementById('deleteTargetReportId');
+    if (inp) inp.value = idReport;
+    var txt = document.getElementById('deleteConfirmText');
+    if (txt) txt.textContent = 'Apakah Anda yakin ingin menghapus data laporan pekerjaan ' + idReport + ' secara permanen dari spreadsheet? Tindakan ini tidak dapat dibatalkan.';
+    var modal = document.getElementById('deleteConfirmModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeDeleteConfirmModal() {
+    var modal = document.getElementById('deleteConfirmModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function executeDeleteReport() {
+    var inp = document.getElementById('deleteTargetReportId');
+    var idReport = inp ? inp.value : '';
+    if (!idReport) return;
+
+    allFilteredReports = allFilteredReports.filter(function (r) { return r.idReport !== idReport; });
+    if (window.globalAllWorkReports && Array.isArray(window.globalAllWorkReports)) {
+      window.globalAllWorkReports = window.globalAllWorkReports.filter(function (r) { return r.idReport !== idReport; });
+    }
+    closeDeleteConfirmModal();
+    filterSubtabReportLog();
+    if (typeof loadDashboardKPI === 'function') loadDashboardKPI();
+    showToast('Menghapus laporan ' + idReport + '...', 'info');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            showToast('Laporan berhasil dihapus secara permanen.', 'success');
+          } else {
+            showToast('Gagal menghapus: ' + (res ? res.error : 'Error'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          showToast('Koneksi gagal: ' + err.message, 'error');
+        })
+        .deleteWorkReport(idReport);
+    }
+  }
+
+  function populateUnitPdfSelect() {
+    var sel = document.getElementById('subtabUnitPdfSelect');
+    if (!sel || sel.tagName !== 'SELECT') return;
+    var curVal = sel.value;
+    sel.innerHTML = '<option value="">-- Cetak Kartu Unit --</option>';
+
+    var unitSet = {};
+    (allFilteredReports || []).forEach(function (r) {
+      if (r.noUnit && r.noUnit !== '-') unitSet[r.noUnit] = true;
+    });
+    (globalUnits || []).forEach(function (u) {
+      if (u.noUnit) unitSet[u.noUnit] = true;
+    });
+
+    var sortedUnits = Object.keys(unitSet).sort();
+    sortedUnits.forEach(function (u) {
+      var opt = document.createElement('option');
+      opt.value = u;
+      opt.textContent = u;
+      if (u === curVal) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
+  /**
+   * FITUR CETAK KARTU RIWAYAT PERBAIKAN UNIT RESMI (A4 ULTRA-HD 400 DPI)
+   * Dilengkapi penguncian koordinat absolut origin (0, 0) anti-shift di Desktop & Smartphone
+   */
+  function downloadSelectedUnitHistoryPDF() {
+    var sel = document.getElementById('subtabUnitPdfSelect');
+    var noUnit = sel ? (sel.value || '').trim().toUpperCase() : '';
+    if (!noUnit) {
+      showToast('Silakan ketik atau pilih nomor lambung unit terlebih dahulu!', 'error');
+      if (sel) sel.focus();
+      return;
+    }
+
+    var btn = document.getElementById('btnDownloadUnitPdf');
+    var origBtnHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<svg class="spin-icon-dash" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Mengunduh...';
+    }
+
+    function restoreBtnUI(isSuccess) {
+      if (!btn) return;
+      if (isSuccess) {
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Selesai';
+        setTimeout(function () {
+          btn.disabled = false;
+          btn.innerHTML = origBtnHtml;
+        }, 600);
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = origBtnHtml;
+      }
+    }
+
+    if (typeof showPdfRenderOverlay === 'function') {
+      showPdfRenderOverlay('Menyiapkan Kartu Riwayat...', 'Sedang merender laporan riwayat unit resolusi tinggi...');
+    }
+
+    if (typeof syncCompanyLogoDisplay === 'function') {
+      syncCompanyLogoDisplay();
+    }
+
+    var unitReports = (allFilteredReports || []).filter(function (r) { return r.noUnit === noUnit; });
+    if (typeof sortListByDateDescending === 'function') {
+      unitReports = sortListByDateDescending(unitReports, 'tanggal');
+    }
+    var unitObj = (globalUnits || []).find(function (u) { return u.noUnit === noUnit; }) || {};
+
+    document.getElementById('unitCardDateGenerated').textContent = formatDateDDMMYYYY(new Date());
+    document.getElementById('unitCardNoUnit').textContent = noUnit;
+    document.getElementById('unitCardModel').textContent = unitObj.model || '-';
+    document.getElementById('unitCardSN').textContent = unitObj.serialNumber || '-';
+
+    var totalDt = 0;
+    var catMap = {};
+    var statusMap = {};
+
+    unitReports.forEach(function (r) {
+      var dt = parseFloat(r.downtimeJam) || 0;
+      totalDt += dt;
+
+      var c = (typeof normalizeCategoryName === 'function')
+        ? normalizeCategoryName(r.kategoriPekerjaan)
+        : String(r.kategoriPekerjaan || 'LAIN-LAIN').trim().toUpperCase();
+      if (!catMap[c]) catMap[c] = { count: 0, dt: 0, statuses: {} };
+      catMap[c].count++;
+      catMap[c].dt += dt;
+
+      var st = String(r.status || 'RFU').trim().toUpperCase();
+      catMap[c].statuses[st] = (catMap[c].statuses[st] || 0) + 1;
+      statusMap[st] = (statusMap[st] || 0) + 1;
+    });
+
+    document.getElementById('unitCardTotalJobs').textContent = unitReports.length + ' Pekerjaan';
+    document.getElementById('unitCardTotalDt').textContent = 'Total DT: ' + totalDt.toFixed(1) + ' Jam';
+
+    var lastStatus = unitReports.length > 0 ? (unitReports[0].status || 'RFU') : 'RFU';
+    document.getElementById('unitCardLastStatus').textContent = lastStatus;
+
+    var tbodyCat = document.getElementById('unitCardCategoryTbody');
+    if (tbodyCat) {
+      tbodyCat.innerHTML = '';
+      var catKeys = Object.keys(catMap).sort(function (a, b) {
+        if (catMap[b].count !== catMap[a].count) {
+          return catMap[b].count - catMap[a].count;
+        }
+        return catMap[b].dt - catMap[a].dt;
+      });
+      if (catKeys.length === 0) {
+        tbodyCat.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:8px; color:#94a3b8;">Tidak ada data kerusakan sistem.</td></tr>';
+      } else {
+        catKeys.forEach(function (k, idx) {
+          var item = catMap[k];
+          var domStatus = 'RFU';
+          var maxS = 0;
+          for (var s in item.statuses) {
+            if (item.statuses[s] > maxS) {
+              maxS = item.statuses[s];
+              domStatus = s;
+            }
+          }
+
+          tbodyCat.innerHTML += '<tr style="border-bottom: 1px solid #e2e8f0;">' +
+            '<td style="padding: 5px 8px; text-align: center; color: #64748b;">' + (idx + 1) + '</td>' +
+            '<td style="padding: 5px 10px; font-weight: 700; color: #0f172a;">' + escapeHtml(k) + '</td>' +
+            '<td style="padding: 5px 10px; text-align: center; font-weight: 700;">' + item.count + ' Kasus</td>' +
+            '<td style="padding: 5px 10px; text-align: center;">' + item.dt.toFixed(1) + ' Jam</td>' +
+            '<td style="padding: 5px 10px; text-align: center; font-weight: 700; color: #0f172a;">' + escapeHtml(domStatus) + '</td>' +
+            '</tr>';
+        });
+      }
+    }
+
+    var tbodyLogs = document.getElementById('unitCardLogsTbody');
+    if (tbodyLogs) {
+      tbodyLogs.innerHTML = '';
+      if (unitReports.length === 0) {
+        tbodyLogs.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:8px; color:#94a3b8;">Belum ada riwayat perbaikan untuk armada ini.</td></tr>';
+      } else {
+        unitReports.forEach(function (r, idx) {
+          var timeStr = (r.tanggal ? formatDateDDMMYYYY(r.tanggal) : '-') + '<br><span style="color:#64748b; font-size:8.5px;">' + (r.jam || '-') + '</span>';
+          var catDisp = (typeof normalizeCategoryName === 'function')
+            ? normalizeCategoryName(r.kategoriPekerjaan)
+            : (r.kategoriPekerjaan || '-');
+          tbodyLogs.innerHTML += '<tr style="border-bottom: 1px solid #e2e8f0;">' +
+            '<td style="padding: 5px 6px; text-align: center; color: #64748b;">' + (idx + 1) + '</td>' +
+            '<td style="padding: 5px 8px; font-weight: 600;">' + timeStr + '</td>' +
+            '<td style="padding: 5px 6px; text-align: center;">' + (r.hmUnit ? (r.hmUnit + ' HM') : '-') + '</td>' +
+            '<td style="padding: 5px 8px; font-weight: 700; color: #0f172a;">' + escapeHtml(catDisp) + '</td>' +
+            '<td style="padding: 5px 8px; line-height: 1.3;">' + escapeHtml(r.deskripsiPekerjaan || '-') + '</td>' +
+            '<td style="padding: 5px 8px; color: #475569;">' + escapeHtml(r.namaMekanik || '-') + '</td>' +
+            '<td style="padding: 5px 6px; text-align: center; font-weight: 700;">' + (r.downtimeJam || '0') + '</td>' +
+            '<td style="padding: 5px 6px; text-align: center; font-weight: 700;">' + escapeHtml(r.status || 'RFU') + '</td>' +
+            '</tr>';
+        });
+      }
+    }
+
+    var printTemplate = document.getElementById('unitHistoryPrintTemplate');
+    if (!printTemplate) {
+      if (typeof hidePdfRenderOverlay === 'function') hidePdfRenderOverlay();
+      restoreBtnUI(false);
+      return;
+    }
+
+    // Isolated In-Flow Host: Rendisi kanvas stabil, 100% presisi A4, tertutup rapi oleh rendering overlay
+    var host = document.createElement('div');
+    host.id = 'unitPdfCaptureHost';
+    host.style.cssText = 'position: fixed; left: 0; top: 0; width: 720px; min-width: 720px; max-width: 720px; height: auto; z-index: 1000; background: #ffffff; margin: 0; padding: 0; box-sizing: border-box; overflow: visible; pointer-events: none;';
+
+    var clone = printTemplate.cloneNode(true);
+    clone.id = 'unitActivePrintTargetNode';
+    clone.classList.add('pdf-print-template-root');
+    clone.style.cssText = 'display: block !important; position: relative !important; width: 720px !important; min-width: 720px !important; max-width: 720px !important; margin: 0 !important; left: 0 !important; background: #ffffff !important; opacity: 1 !important; visibility: visible !important; box-sizing: border-box !important;';
+
+    host.appendChild(clone);
+    document.body.appendChild(host);
+
+    var isCleaned = false;
+    function cleanupHost() {
+      if (isCleaned) return;
+      isCleaned = true;
+      if (typeof hidePdfRenderOverlay === 'function') {
+        hidePdfRenderOverlay();
+      }
+      if (host && host.parentNode) {
+        host.parentNode.removeChild(host);
+      }
+    }
+
+    var safetyTimer = setTimeout(function () {
+      if (!isCleaned) {
+        cleanupHost();
+        restoreBtnUI(false);
+        showToast('Waktu proses cetak Kartu Unit habis.', 'error');
+      }
+    }, 15000);
+
+    waitForImagesLoaded(clone, function () {
+      setTimeout(function () {
+        if (typeof window.scrollTo === 'function') {
+          window.scrollTo(0, 0);
+        }
+        var opt = {
+          margin: [8, 8, 8, 8],
+          filename: 'KARTU_RIWAYAT_' + noUnit + '_' + new Date().toISOString().slice(0, 10) + '.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 3,
+            dpi: 300,
+            letterRendering: true,
+            useCORS: true,
+            allowTaint: false,
+            scrollY: 0,
+            scrollX: 0,
+            x: 0,
+            y: 0,
+            windowWidth: 720,
+            backgroundColor: '#ffffff',
+            logging: false
+          },
+          pagebreak: {
+            mode: ['avoid-all', 'css', 'legacy'],
+            avoid: ['tr', 'table', '.far-signature-table', '.pdf-avoid-break', 'img']
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
+        };
+
+        try {
+          if (typeof html2pdf !== 'undefined') {
+            html2pdf().set(opt).from(clone).save().then(function () {
+              clearTimeout(safetyTimer);
+              cleanupHost();
+              restoreBtnUI(true);
+            }).catch(function (err) {
+              clearTimeout(safetyTimer);
+              cleanupHost();
+              restoreBtnUI(false);
+              showToast('Gagal mencetak PDF: ' + err.message, 'error');
+            });
+          } else {
+            clearTimeout(safetyTimer);
+            cleanupHost();
+            restoreBtnUI(false);
+            showToast('Library html2pdf belum selesai dimuat.', 'error');
+          }
+        } catch (execErr) {
+          clearTimeout(safetyTimer);
+          cleanupHost();
+          restoreBtnUI(false);
+          showToast('Terjadi kendala saat memproses PDF: ' + execErr.message, 'error');
+        }
+      }, 150);
+    });
+  }
+
+  // Inisialisasi Event Listener Dual Binding untuk Tombol Subnav & Status Part
+  function initReportSubtabEventListeners() {
+    var btnInput = document.getElementById('subnav-btn-input');
+    var btnLog = document.getElementById('subnav-btn-log');
+    var selStatusPart = document.getElementById('repStatusPart');
+
+    if (btnInput) {
+      btnInput.addEventListener('click', function (e) {
+        if (e) e.preventDefault();
+        switchReportSubTab('input');
+      });
+    }
+    if (btnLog) {
+      btnLog.addEventListener('click', function (e) {
+        if (e) e.preventDefault();
+        switchReportSubTab('log');
+      });
+    }
+    if (selStatusPart) {
+      selStatusPart.addEventListener('change', function () {
+        handleStatusPartChange(this);
+      });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initReportSubtabEventListeners);
+  } else {
+    initReportSubtabEventListeners();
+  }
+</script>

@@ -1,0 +1,680 @@
+<script>
+  /**
+   * ============================================================================
+   * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+   * File: js-master.html (Tab Master Data Hub: Unit, Mekanik, Lokasi, Kategori, Part, Baterai)
+   * ============================================================================
+   */
+
+  var currentUnitTypeFilter = 'ALL';
+
+  function switchMasterHubTab(tabName) {
+    var pills = document.querySelectorAll('.subnav-pill');
+    pills.forEach(function (p) {
+      if (p.id && p.id.indexOf('master-pill-') === 0) p.classList.remove('active');
+    });
+
+    var panels = document.querySelectorAll('.master-hub-panel');
+    panels.forEach(function (pan) { pan.style.display = 'none'; });
+
+    var targetPill = document.getElementById('master-pill-' + tabName);
+    var targetPanel = document.getElementById('master-panel-' + tabName);
+
+    if (targetPill) targetPill.classList.add('active');
+    if (targetPanel) targetPanel.style.display = 'block';
+
+    loadMasterHubData();
+  }
+
+  function loadMasterHubData() {
+    renderMasterUnitTable();
+    renderMasterMechanicTable();
+    renderMasterLocationTable();
+    renderMasterCategoryTable();
+    syncCompanyLogoDisplay();
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            if (res.categories) globalCategories = res.categories;
+            if (res.mechanics) globalMechanics = res.mechanics;
+            if (res.locations) globalLocations = res.locations;
+            if (res.parts) globalParts = res.parts;
+            if (res.companyLogoUrl) {
+              syncCompanyLogoDisplay(res.companyLogoUrl);
+            }
+            populateDropdowns();
+            renderMasterPartTable(res.parts || []);
+            renderMasterBatteryTable(res.batteries || []);
+          }
+        })
+        .getAllMasterData();
+    }
+  }
+
+  /**
+   * Mengklasifikasikan tipe armada menjadi 4 kategori standar tambang
+   */
+  function getUnitClassification(u) {
+    var raw = String(u.tipeUnit || u.tipe || '').trim().toUpperCase();
+    if (raw.indexOf('HAULER') !== -1 || raw.indexOf('TRUCK') !== -1 || raw.indexOf('ADT') !== -1 || raw.indexOf('DT') !== -1) {
+      return 'HAULER';
+    }
+    if (raw.indexOf('DIGGER') !== -1 || raw.indexOf('EXCAVATOR') !== -1 || raw.indexOf('SHOVEL') !== -1) {
+      return 'DIGGER';
+    }
+    if (raw.indexOf('ANCILLARY') !== -1 || raw.indexOf('DOZER') !== -1 || raw.indexOf('GRADER') !== -1 || raw.indexOf('ROLLER') !== -1 || raw.indexOf('COMPACTOR') !== -1) {
+      return 'ANCILLARY';
+    }
+    if (raw.indexOf('SUPPORT') !== -1 || raw.indexOf('TOWER') !== -1 || raw.indexOf('CRANE') !== -1 || raw.indexOf('FUEL') !== -1 || raw.indexOf('WATER') !== -1) {
+      return 'SUPPORT';
+    }
+    return 'HAULER';
+  }
+
+  /**
+   * Filter interaktif armada berdasarkan tipe (ALL, HAULER, DIGGER, ANCILLARY, SUPPORT)
+   */
+  function filterMasterUnitType(type) {
+    if (type) {
+      currentUnitTypeFilter = type.toUpperCase();
+    }
+
+    var pills = ['ALL', 'HAULER', 'DIGGER', 'ANCILLARY', 'SUPPORT'];
+    pills.forEach(function (p) {
+      var btn = document.getElementById('btnFilterUnit-' + p);
+      if (btn) {
+        if (p === currentUnitTypeFilter) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      }
+    });
+
+    renderMasterUnitTable();
+  }
+
+  /**
+   * Render tabel armada tambang lengkap dengan perhitungan per tipe & grand total
+   */
+  function renderMasterUnitTable() {
+    var tbody = document.getElementById('masterUnitTableBody');
+
+    // 1. Hitung jumlah unit per kategori dan total keseluruhan
+    var countTotal = (globalUnits || []).length;
+    var countHauler = 0;
+    var countDigger = 0;
+    var countAncillary = 0;
+    var countSupport = 0;
+
+    (globalUnits || []).forEach(function (u) {
+      var c = getUnitClassification(u);
+      if (c === 'HAULER') countHauler++;
+      else if (c === 'DIGGER') countDigger++;
+      else if (c === 'ANCILLARY') countAncillary++;
+      else if (c === 'SUPPORT') countSupport++;
+    });
+
+    // 2. Perbarui 5 Kartu Metrik di atas tabel
+    var elTotal = document.getElementById('unitCountTotal');
+    var elHauler = document.getElementById('unitCountHauler');
+    var elDigger = document.getElementById('unitCountDigger');
+    var elAncillary = document.getElementById('unitCountAncillary');
+    var elSupport = document.getElementById('unitCountSupport');
+
+    if (elTotal) elTotal.textContent = countTotal + ' Unit';
+    if (elHauler) elHauler.textContent = countHauler + ' Unit';
+    if (elDigger) elDigger.textContent = countDigger + ' Unit';
+    if (elAncillary) elAncillary.textContent = countAncillary + ' Unit';
+    if (elSupport) elSupport.textContent = countSupport + ' Unit';
+
+    // 3. Perbarui badge counter pada tombol-tombol pill filter
+    var badgeAll = document.getElementById('badgeUnitPill-ALL');
+    var badgeHauler = document.getElementById('badgeUnitPill-HAULER');
+    var badgeDigger = document.getElementById('badgeUnitPill-DIGGER');
+    var badgeAncillary = document.getElementById('badgeUnitPill-ANCILLARY');
+    var badgeSupport = document.getElementById('badgeUnitPill-SUPPORT');
+
+    if (badgeAll) badgeAll.textContent = countTotal;
+    if (badgeHauler) badgeHauler.textContent = countHauler;
+    if (badgeDigger) badgeDigger.textContent = countDigger;
+    if (badgeAncillary) badgeAncillary.textContent = countAncillary;
+    if (badgeSupport) badgeSupport.textContent = countSupport;
+
+    // 4. Perbarui label status kategori yang sedang aktif
+    var activeLabelEl = document.getElementById('unitTypeActiveLabel');
+    if (activeLabelEl) {
+      var labelText = 'SEMUA TIPE ARMADA';
+      if (currentUnitTypeFilter === 'HAULER') labelText = 'HAULER (DUMP TRUCK / ADT)';
+      else if (currentUnitTypeFilter === 'DIGGER') labelText = 'DIGGER (EXCAVATOR / SHOVEL)';
+      else if (currentUnitTypeFilter === 'ANCILLARY') labelText = 'ANCILLARY (DOZER / GRADER / ROLLER)';
+      else if (currentUnitTypeFilter === 'SUPPORT') labelText = 'SUPPORT EQUIPMENT';
+      activeLabelEl.textContent = 'KATEGORI: ' + labelText;
+    }
+
+    if (!tbody) return;
+
+    if (!globalUnits || globalUnits.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:16px;">Belum ada data armada.</td></tr>';
+      var badgeCountZero = document.getElementById('badgeUnitTableCount');
+      if (badgeCountZero) badgeCountZero.textContent = '0';
+      return;
+    }
+
+    // 5. Filter data berdasarkan tipe aktif dan kata kunci pencarian
+    var searchInput = document.getElementById('masterUnitSearchInput');
+    var keyword = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+    var filteredList = (globalUnits || []).filter(function (u) {
+      var classType = getUnitClassification(u);
+      var matchType = (currentUnitTypeFilter === 'ALL') || (classType === currentUnitTypeFilter);
+
+      var matchKw = !keyword ||
+        (u.noUnit && u.noUnit.toLowerCase().indexOf(keyword) !== -1) ||
+        (u.model && u.model.toLowerCase().indexOf(keyword) !== -1) ||
+        (u.serialNumber && u.serialNumber.toLowerCase().indexOf(keyword) !== -1) ||
+        (u.lokasiPit && u.lokasiPit.toLowerCase().indexOf(keyword) !== -1) ||
+        (u.tipe && u.tipe.toLowerCase().indexOf(keyword) !== -1);
+
+      return matchType && matchKw;
+    });
+
+    var badgeTableCount = document.getElementById('badgeUnitTableCount');
+    if (badgeTableCount) badgeTableCount.textContent = filteredList.length;
+
+    if (filteredList.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:var(--text-muted);">Tidak ada armada tambang yang sesuai dengan kriteria filter / pencarian.</td></tr>';
+      return;
+    }
+
+    // 6. Susun baris tabel dengan badge visual per klasifikasi
+    var html = '';
+    filteredList.forEach(function (u, idx) {
+      var hmVal = parseFloat(u.hmTerakhir || u.HMTerakhir) || 0;
+      var hmDisplay = hmVal > 0 ? (hmVal.toFixed(1) + ' HM') : '<span style="color:var(--text-dim);">-</span>';
+
+      var typeClass = getUnitClassification(u);
+      var badgeStyle = 'background: rgba(245, 158, 11, 0.12); color: var(--accent-orange); border: 1px solid rgba(245, 158, 11, 0.3);';
+
+      if (typeClass === 'DIGGER') {
+        badgeStyle = 'background: rgba(56, 189, 248, 0.12); color: #0284c7; border: 1px solid rgba(56, 189, 248, 0.3);';
+      } else if (typeClass === 'ANCILLARY') {
+        badgeStyle = 'background: rgba(168, 85, 247, 0.12); color: #9333ea; border: 1px solid rgba(168, 85, 247, 0.3);';
+      } else if (typeClass === 'SUPPORT') {
+        badgeStyle = 'background: rgba(5, 150, 105, 0.12); color: var(--accent-green); border: 1px solid rgba(5, 150, 105, 0.3);';
+      }
+
+      var displayTipeLabel = u.tipeUnit || u.tipe || typeClass;
+      var typeBadgeHtml = '<span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 10px; letter-spacing: 0.3px; ' + badgeStyle + '">' + escapeHtml(displayTipeLabel) + '</span>';
+
+      html += '<tr>' +
+        '<td style="text-align:center; color:var(--text-dim);">' + (idx + 1) + '</td>' +
+        '<td><strong style="color:var(--text-main); font-size:13px;">' + escapeHtml(u.noUnit) + '</strong></td>' +
+        '<td>' + typeBadgeHtml + '</td>' +
+        '<td><strong style="color:#ffffff;">' + escapeHtml(u.model || '-') + '</strong></td>' +
+        '<td>' + escapeHtml(u.serialNumber || '-') + '</td>' +
+        '<td style="text-align:center; font-weight:700; color:var(--accent-orange);">' + hmDisplay + '</td>' +
+        '</tr>';
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  function renderMasterMechanicTable() {
+    var tbody = document.getElementById('masterMechanicTableBody');
+    if (!tbody) return;
+    if (!globalMechanics || globalMechanics.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:16px;">Belum ada data teknisi.</td></tr>';
+      return;
+    }
+    var html = '';
+    globalMechanics.forEach(function (m, idx) {
+      html += '<tr>' +
+        '<td style="text-align:center; color:var(--text-dim);">' + (idx + 1) + '</td>' +
+        '<td><strong style="color:#ffffff;">' + escapeHtml(m.nama) + '</strong></td>' +
+        '<td>' + escapeHtml(m.keahlian || '-') + '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  function renderMasterLocationTable() {
+    var tbody = document.getElementById('masterLocationTableBody');
+    if (!tbody) return;
+    if (!globalLocations || globalLocations.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:16px;">Belum ada data lokasi.</td></tr>';
+      return;
+    }
+    var html = '';
+    globalLocations.forEach(function (l, idx) {
+      html += '<tr>' +
+        '<td style="text-align:center; color:var(--text-dim);">' + (idx + 1) + '</td>' +
+        '<td><strong style="color:#ffffff;">' + escapeHtml(l.namaLokasi) + '</strong></td>' +
+        '<td>' + escapeHtml(l.tipeArea || '-') + '</td>' +
+        '<td>' + escapeHtml(l.keterangan || '-') + '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  function renderMasterCategoryTable() {
+    var tbody = document.getElementById('masterCategoryTableBody');
+    if (!tbody) return;
+    if (!globalCategories || globalCategories.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:16px;">Belum ada kategori.</td></tr>';
+      return;
+    }
+    var html = '';
+    globalCategories.forEach(function (c, idx) {
+      html += '<tr>' +
+        '<td style="text-align:center; color:var(--text-dim);">' + (idx + 1) + '</td>' +
+        '<td><strong style="color:#ffffff;">' + escapeHtml(c) + '</strong></td>' +
+        '<td style="text-align:center;">' +
+        '<button type="button" class="btn-secondary" style="padding:2px 8px; font-size:11px; color:#f87171; border-color:rgba(239,68,68,0.3);" onclick="deleteCategoryByIndex(' + idx + ')">Hapus</button>' +
+        '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  function renderMasterPartTable(parts) {
+    var tbody = document.getElementById('masterPartTableBody');
+    if (!tbody) return;
+    if (!parts || parts.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:16px;">Belum ada katalog spare part.</td></tr>';
+      return;
+    }
+    var html = '';
+    parts.forEach(function (p, idx) {
+      html += '<tr>' +
+        '<td style="text-align:center; color:var(--text-dim);">' + (idx + 1) + '</td>' +
+        '<td><strong style="color:#ffffff;">' + escapeHtml(p.partNumber) + '</strong></td>' +
+        '<td>' + escapeHtml(p.namaPart) + '</td>' +
+        '<td>' + escapeHtml(p.kategori) + '</td>' +
+        '<td>' + escapeHtml(p.merk || '-') + '</td>' +
+        '<td style="text-align:center;">' + escapeHtml(p.satuan || 'PCS') + '</td>' +
+        '<td>' + escapeHtml(p.unitModel || '-') + '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  function renderMasterBatteryTable(bats) {
+    var tbody = document.getElementById('masterBatteryTableBody');
+    if (!tbody) return;
+    if (!bats || bats.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:16px;">Belum ada spesifikasi baterai.</td></tr>';
+      return;
+    }
+    var html = '';
+    bats.forEach(function (b, idx) {
+      html += '<tr>' +
+        '<td style="text-align:center; color:var(--text-dim);">' + (idx + 1) + '</td>' +
+        '<td><strong style="color:#ffffff;">' + escapeHtml(b.kodeBaterai) + '</strong></td>' +
+        '<td>' + escapeHtml(b.merk) + '</td>' +
+        '<td style="text-align:center;">' + escapeHtml(b.kapasitas) + ' Ah</td>' +
+        '<td style="text-align:center;">' + escapeHtml(b.voltase) + '</td>' +
+        '<td>' + escapeHtml(b.tipeAki || '-') + '</td>' +
+        '<td>' + escapeHtml(b.aplikasi || '-') + '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
+  function handleMasterUnitSubmit(e) {
+    e.preventDefault();
+    var payload = {
+      noUnit: document.getElementById('mastNoUnit').value.toUpperCase().trim(),
+      tipeUnit: document.getElementById('mastTipe').value,
+      tipe: document.getElementById('mastTipe').value,
+      model: document.getElementById('mastModel').value.toUpperCase().trim(),
+      serialNumber: document.getElementById('mastSN').value.trim(),
+      lokasiPit: document.getElementById('mastPit').value.toUpperCase().trim(),
+      hmTerakhir: document.getElementById('mastHMTerakhir') ? document.getElementById('mastHMTerakhir').value.trim() : '0'
+    };
+    globalUnits.push(payload);
+    populateDropdowns();
+    renderMasterUnitTable();
+    renderNextPMScheduleTable();
+    showToast('Mendaftarkan armada ' + payload.noUnit + ' dengan HM ' + payload.hmTerakhir + '...', 'info');
+    document.getElementById('masterUnitForm').reset();
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            showToast('Armada berhasil didaftarkan dan tersinkronisasi!', 'success');
+            renderNextPMScheduleTable();
+          }
+        })
+        .addMasterUnit(payload);
+    }
+  }
+
+  function handleMasterMechanicSubmit(e) {
+    e.preventDefault();
+    var payload = {
+      nama: document.getElementById('mastMekNama').value.toUpperCase().trim(),
+      keahlian: document.getElementById('mastMekKeahlian').value
+    };
+    globalMechanics.push(payload);
+    populateDropdowns();
+    renderMasterMechanicTable();
+    showToast('Mendaftarkan teknisi ' + payload.nama + '...', 'info');
+    document.getElementById('masterMechanicForm').reset();
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) showToast('Teknisi berhasil didaftarkan!', 'success');
+        })
+        .addMasterMechanic(payload);
+    }
+  }
+
+  function handleMasterLocationSubmit(e) {
+    e.preventDefault();
+    var payload = {
+      namaLokasi: document.getElementById('mastLokNama').value.toUpperCase().trim(),
+      tipeArea: document.getElementById('mastLokTipe').value,
+      keterangan: document.getElementById('mastLokKeterangan').value.trim()
+    };
+    globalLocations.push(payload);
+    populateDropdowns();
+    renderMasterLocationTable();
+    showToast('Mendaftarkan lokasi ' + payload.namaLokasi + '...', 'info');
+    document.getElementById('masterLocationForm').reset();
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) showToast('Lokasi berhasil didaftarkan!', 'success');
+        })
+        .addMasterLocation(payload);
+    }
+  }
+
+  function handleMasterCategorySubmit(e) {
+    e.preventDefault();
+    var cat = document.getElementById('mastCatNama').value.toUpperCase().trim();
+    if (!cat) return;
+    if (globalCategories.indexOf(cat) === -1) {
+      globalCategories.push(cat);
+      populateDropdowns();
+      renderMasterCategoryTable();
+    }
+    showToast('Menambahkan kategori ' + cat + '...', 'info');
+    document.getElementById('masterCategoryForm').reset();
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) showToast('Kategori berhasil ditambahkan!', 'success');
+        })
+        .addMasterCategory(cat);
+    }
+  }
+
+  function handleMasterPartSubmit(e) {
+    e.preventDefault();
+    var payload = {
+      partNumber: document.getElementById('mastPartNumber').value.toUpperCase().trim(),
+      namaPart: document.getElementById('mastPartNama').value.toUpperCase().trim(),
+      kategori: document.getElementById('mastPartKategori').value,
+      merk: document.getElementById('mastPartMerk').value.toUpperCase().trim(),
+      satuan: document.getElementById('mastPartSatuan').value,
+      unitModel: document.getElementById('mastPartUnitModel').value.toUpperCase().trim()
+    };
+    globalParts.push(payload);
+    populateDropdowns();
+    showToast('Mendaftarkan part ' + payload.partNumber + '...', 'info');
+    document.getElementById('masterPartForm').reset();
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            showToast('Spare part berhasil didaftarkan!', 'success');
+            loadMasterHubData();
+          }
+        })
+        .addMasterPart(payload);
+    }
+  }
+
+  function handleMasterBatterySubmit(e) {
+    e.preventDefault();
+    var payload = {
+      kodeBaterai: document.getElementById('mastBatKode').value.toUpperCase().trim(),
+      merk: document.getElementById('mastBatMerk').value.toUpperCase().trim(),
+      kapasitas: document.getElementById('mastBatKapasitas').value,
+      voltase: document.getElementById('mastBatVoltase').value,
+      tipeAki: document.getElementById('mastBatTipeAki').value,
+      aplikasi: document.getElementById('mastBatAplikasi').value.toUpperCase().trim()
+    };
+    showToast('Mendaftarkan spesifikasi baterai...', 'info');
+    document.getElementById('masterBatteryForm').reset();
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            showToast('Spesifikasi baterai berhasil didaftarkan!', 'success');
+            loadMasterHubData();
+          }
+        })
+        .addMasterBattery(payload);
+    }
+  }
+
+  function deleteCategoryByIndex(idx) {
+    if (idx >= 0 && idx < globalCategories.length) {
+      var catName = globalCategories[idx];
+      globalCategories.splice(idx, 1);
+      populateDropdowns();
+      renderMasterCategoryTable();
+      renderCategoryManageList();
+      showToast('Menghapus kategori ' + catName + '...', 'info');
+
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run.deleteMasterCategory(catName);
+      }
+    }
+  }
+
+  function openAddCategoryModal() {
+    var modal = document.getElementById('addCategoryModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeAddCategoryModal() {
+    var modal = document.getElementById('addCategoryModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function submitNewCategory() {
+    var inp = document.getElementById('newCategoryNameInput');
+    if (!inp) return;
+    var cat = inp.value.toUpperCase().trim();
+    if (!cat) return;
+    if (globalCategories.indexOf(cat) === -1) {
+      globalCategories.push(cat);
+      populateDropdowns();
+      renderMasterCategoryTable();
+    }
+    closeAddCategoryModal();
+    inp.value = '';
+    showToast('Kategori ' + cat + ' ditambahkan.', 'success');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run.addMasterCategory(cat);
+    }
+  }
+
+  function openManageCategoryModal() {
+    renderCategoryManageList();
+    var modal = document.getElementById('manageCategoryModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeManageCategoryModal() {
+    var modal = document.getElementById('manageCategoryModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function renderCategoryManageList() {
+    var container = document.getElementById('categoryManageListContainer');
+    if (!container) return;
+    var html = '';
+    globalCategories.forEach(function (cat, idx) {
+      html += '<div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 12px;">' +
+        '<span>' + escapeHtml(cat) + '</span>' +
+        '<button type="button" class="btn-secondary" style="padding: 2px 8px; font-size: 11px; color: #f87171;" onclick="deleteCategoryByIndex(' + idx + ')">Hapus</button>' +
+        '</div>';
+    });
+    container.innerHTML = html;
+  }
+
+  function submitQuickNewCategory() {
+    var inp = document.getElementById('quickAddCategoryInput');
+    if (!inp) return;
+    var cat = inp.value.toUpperCase().trim();
+    if (!cat) return;
+    if (globalCategories.indexOf(cat) === -1) {
+      globalCategories.push(cat);
+      populateDropdowns();
+      renderMasterCategoryTable();
+      renderCategoryManageList();
+    }
+    inp.value = '';
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run.addMasterCategory(cat);
+    }
+  }
+
+  var selectedCompanyLogoBase64 = '';
+
+  function handleCompanyLogoFileSelect(inputEl) {
+    if (!inputEl || !inputEl.files || !inputEl.files[0]) return;
+    var file = inputEl.files[0];
+    if (!file.type.match('image.*')) {
+      showToast('Harap pilih file gambar resmi (PNG / JPG)!', 'error');
+      inputEl.value = '';
+      return;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      selectedCompanyLogoBase64 = e.target.result;
+      var previewImg = document.getElementById('companyLogoPreviewImg');
+      var noPreview = document.getElementById('companyLogoNoPreview');
+      if (previewImg) {
+        previewImg.src = selectedCompanyLogoBase64;
+        previewImg.style.display = 'block';
+      }
+      if (noPreview) noPreview.style.display = 'none';
+      showToast('Pratinjau logo siap. Klik tombol "Unggah Logo" untuk menyimpan.', 'info');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleCompanyLogoSubmit(e) {
+    e.preventDefault();
+    if (!selectedCompanyLogoBase64) {
+      showToast('Silakan pilih file logo resmi terlebih dahulu!', 'error');
+      return;
+    }
+
+    var btn = document.getElementById('btnUploadLogo');
+    if (btn) btn.disabled = true;
+
+    var payload = {
+      imageBase64: selectedCompanyLogoBase64,
+      driveFolderId: localStorage.getItem('AE_DRIVE_FOLDER_ID') || ''
+    };
+
+    showToast('Mengunggah logo resmi perusahaan ke Google Drive...', 'info');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (btn) btn.disabled = false;
+          if (res && res.success) {
+            showToast(res.message || 'Logo resmi berhasil diunggah dan disimpan!', 'success');
+            syncCompanyLogoDisplay(res.logoUrl || selectedCompanyLogoBase64);
+            var fileInput = document.getElementById('companyLogoFileInput');
+            if (fileInput) fileInput.value = '';
+            selectedCompanyLogoBase64 = '';
+          } else {
+            showToast('Gagal mengunggah logo: ' + (res ? res.error : 'Terjadi kesalahan.'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          if (btn) btn.disabled = false;
+          showToast('Koneksi gagal: ' + err.message, 'error');
+        })
+        .uploadCompanyLogo(payload);
+    } else {
+      if (btn) btn.disabled = false;
+      syncCompanyLogoDisplay(selectedCompanyLogoBase64);
+      showToast('Logo disimpan secara lokal (Mode Offline)', 'success');
+      var fileInput = document.getElementById('companyLogoFileInput');
+      if (fileInput) fileInput.value = '';
+      selectedCompanyLogoBase64 = '';
+    }
+  }
+
+  function removeCurrentCompanyLogo() {
+    localStorage.removeItem('AE_COMPANY_LOGO_URL');
+    syncCompanyLogoDisplay('');
+    showToast('Logo perusahaan telah dinonaktifkan.', 'info');
+  }
+
+  function syncCompanyLogoDisplay(logoUrl) {
+    var finalUrl = logoUrl || localStorage.getItem('AE_COMPANY_LOGO_URL') || '';
+    if (logoUrl) {
+      localStorage.setItem('AE_COMPANY_LOGO_URL', logoUrl);
+    }
+
+    var previewImg = document.getElementById('companyLogoPreviewImg');
+    var noPreview = document.getElementById('companyLogoNoPreview');
+    var unitCardLogo = document.getElementById('unitCardCompanyLogo');
+    var farPdfLogo = document.getElementById('farPdfCompanyLogo');
+    var dashPdfLogo = document.getElementById('dashPdfCompanyLogo');
+
+    if (finalUrl) {
+      var directUrl = (typeof getDirectDriveImageUrl === 'function') ? getDirectDriveImageUrl(finalUrl) : finalUrl;
+      if (previewImg) {
+        previewImg.src = directUrl;
+        previewImg.style.display = 'block';
+      }
+      if (noPreview) noPreview.style.display = 'none';
+
+      [unitCardLogo, farPdfLogo, dashPdfLogo].forEach(function (img) {
+        if (img) {
+          img.src = directUrl;
+          img.style.display = 'block';
+        }
+      });
+    } else {
+      if (previewImg) {
+        previewImg.src = '';
+        previewImg.style.display = 'none';
+      }
+      if (noPreview) noPreview.style.display = 'block';
+
+      [unitCardLogo, farPdfLogo, dashPdfLogo].forEach(function (img) {
+        if (img) {
+          img.src = '';
+          img.style.display = 'none';
+        }
+      });
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    syncCompanyLogoDisplay();
+  });
+</script>

@@ -1,0 +1,439 @@
+<script>
+  /**
+   * ============================================================================
+   * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+   * File: js-battery.html (Monitoring Armada, SWAP Baterai, Riwayat & Form Input)
+   * ============================================================================
+   */
+
+  var activeBatterySubTab = 'log';
+
+  function switchBatterySubTab(subTabId) {
+    activeBatterySubTab = subTabId;
+    var btnLog = document.getElementById('subnav-bat-btn-log');
+    var btnInput = document.getElementById('subnav-bat-btn-input');
+    var panelLog = document.getElementById('battery-subtab-log');
+    var panelInput = document.getElementById('battery-subtab-input');
+
+    if (btnLog) btnLog.classList.toggle('active', subTabId === 'log');
+    if (btnInput) btnInput.classList.toggle('active', subTabId === 'input');
+
+    if (panelLog) {
+      panelLog.style.display = (subTabId === 'log') ? 'block' : 'none';
+      panelLog.classList.toggle('active', subTabId === 'log');
+    }
+    if (panelInput) {
+      panelInput.style.display = (subTabId === 'input') ? 'block' : 'none';
+      panelInput.classList.toggle('active', subTabId === 'input');
+    }
+
+    if (subTabId === 'log') {
+      renderBatteryMonitoringTable();
+    }
+  }
+
+  function handleBatteryTindakanChange(el) {
+    if (!el) return;
+    var val = (el.value || '').toUpperCase();
+    var grp = document.getElementById('batSwapUnitGroup');
+    if (grp) {
+      if (val.indexOf('SWAP') !== -1) {
+        grp.style.display = 'block';
+        var inp = document.getElementById('batSwapUnit');
+        if (inp) inp.required = true;
+      } else {
+        grp.style.display = 'none';
+        var inp = document.getElementById('batSwapUnit');
+        if (inp) {
+          inp.required = false;
+          inp.value = '';
+        }
+      }
+    }
+  }
+
+  function fetchAndRenderBatteryLogs(forceRefresh) {
+    if (!forceRefresh && typeof appDataCache !== 'undefined' && appDataCache.battery && appDataCache.battery.data) {
+      globalBatteryLogs = appDataCache.battery.data;
+      if (typeof renderBatteryMonitoringTable === 'function') renderBatteryMonitoringTable();
+      return;
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getBatteryLogs === 'function') {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success && res.logs) {
+            globalBatteryLogs = res.logs;
+            if (typeof appDataCache !== 'undefined') {
+              appDataCache.battery = {
+                data: globalBatteryLogs,
+                lastFetched: Date.now()
+              };
+            }
+            if (typeof renderBatteryMonitoringTable === 'function') renderBatteryMonitoringTable();
+            if (typeof loadDashboardKPI === 'function') loadDashboardKPI();
+          }
+        })
+        .withFailureHandler(function (err) {
+          console.warn('Gagal memuat log baterai dari server:', err);
+          if (typeof renderBatteryMonitoringTable === 'function') renderBatteryMonitoringTable();
+        })
+        .getBatteryLogs();
+    } else {
+      if (typeof renderBatteryMonitoringTable === 'function') renderBatteryMonitoringTable();
+    }
+  }
+
+  function getAllCombinedBatteryLogs() {
+    var list = [];
+    var seenKeys = {};
+
+    // 1. Ambil dari memori globalBatteryLogs
+    (globalBatteryLogs || []).forEach(function (b) {
+      var k = (b.tanggal || '') + '|' + (b.noUnit || '') + '|' + (b.statusGanti || '') + '|' + (b.catatan || '');
+      if (!seenKeys[k]) {
+        seenKeys[k] = true;
+        list.push({
+          source: 'bat_log',
+          tanggal: b.tanggal || new Date().toISOString().slice(0, 10),
+          noUnit: b.noUnit || '-',
+          merkBaterai: b.merkBaterai || b.merk || '-',
+          voltase: b.voltase || '-',
+          cca: b.cca || '-',
+          ir: b.ir || '-',
+          kondisiFisik: b.kondisiFisik || 'BAIK & BERSIH',
+          statusGanti: b.statusGanti || 'GANTI BATERAI BARU',
+          jumlahAki: b.jumlahAki || (String(b.catatan || '').match(/Qty:\s*(\d+)/i) ? String(b.catatan).match(/Qty:\s*(\d+)/i)[1] : '2'),
+          swapUnit: b.swapUnit || (String(b.catatan || '').match(/SWAP:\s*([^\]]+)/i) ? String(b.catatan).match(/SWAP:\s*([^\]]+)/i)[1].trim() : ''),
+          mekanik: b.mekanik || '-',
+          catatan: b.catatan || '',
+          urlFoto: b.urlFoto || (b.imagesBase64 && b.imagesBase64[0] ? b.imagesBase64[0] : '')
+        });
+      }
+    });
+
+    // 2. Ambil dari localStorage jika ada cache
+    try {
+      var saved = JSON.parse(localStorage.getItem('AE_BATTERY_LOGS') || '[]');
+      if (Array.isArray(saved)) {
+        saved.forEach(function (b) {
+          var k = (b.tanggal || '') + '|' + (b.noUnit || '') + '|' + (b.statusGanti || '') + '|' + (b.catatan || '');
+          if (!seenKeys[k]) {
+            seenKeys[k] = true;
+            list.push(b);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Gagal muat cache baterai:', e);
+    }
+
+    // 3. Ekstrak data historis dari allFilteredReports (pekerjaan kategori baterai di Log_Pekerjaan)
+    (allFilteredReports || []).forEach(function (r) {
+      var cat = String(r.kategoriPekerjaan || '').toUpperCase();
+      var desk = String(r.deskripsiPekerjaan || '').toUpperCase();
+      var sp = String(r.statusPart || '').toUpperCase();
+
+      var isBatJob = cat.indexOf('BATTERY') !== -1 || cat.indexOf('BATERAI') !== -1 ||
+        desk.indexOf('BATERAI') !== -1 || desk.indexOf('BATTERY') !== -1 || desk.indexOf('AKI') !== -1;
+
+      if (isBatJob) {
+        var k = (r.tanggal || '') + '|' + (r.noUnit || '') + '|REP|' + (r.idReport || '');
+        if (!seenKeys[k]) {
+          seenKeys[k] = true;
+          var tind = 'GANTI BATERAI BARU';
+          if (desk.indexOf('SWAP') !== -1 || desk.indexOf('KANIBAL') !== -1 || desk.indexOf('TUKAR') !== -1) {
+            tind = 'SWAP / TUKAR BATERAI UNIT';
+          } else if (sp === 'BAD' || desk.indexOf('RUSAK') !== -1 || desk.indexOf('SOAK') !== -1 || desk.indexOf('DROP') !== -1) {
+            tind = 'BATERAI RUSAK (SCRAP / AFKIR)';
+          } else if (desk.indexOf('CHARGE') !== -1 || desk.indexOf('RECHARGE') !== -1) {
+            tind = 'RECHARGE / CHARGE ULANG';
+          }
+
+          var swapMatch = desk.match(/(?:SWAP|DARI|KE)\s+UNIT\s*([A-Z0-9_-]+)/i);
+
+          list.push({
+            source: 'work_report',
+            tanggal: r.tanggal || '-',
+            noUnit: r.noUnit || '-',
+            merkBaterai: 'Aki Standar Unit',
+            voltase: '24V (Sistem)',
+            cca: '-',
+            ir: '-',
+            kondisiFisik: sp === 'BAD' ? 'CELL RUSAK' : 'STANDAR OPERASIONAL',
+            statusGanti: tind,
+            jumlahAki: '2',
+            swapUnit: swapMatch ? swapMatch[1] : '',
+            mekanik: r.namaMekanik || '-',
+            catatan: r.deskripsiPekerjaan || '-',
+            urlFoto: r.urlFotoBefore || r.urlFotoAfter || r.urlFotoDokumentasi || ''
+          });
+        }
+      }
+    });
+
+    return list;
+  }
+
+  function filterBatteryTable() {
+    renderBatteryMonitoringTable();
+  }
+
+  function renderBatteryMonitoringTable() {
+    var tbody = document.getElementById('batteryTableBody');
+    if (!tbody) return;
+
+    var allLogs = getAllCombinedBatteryLogs();
+
+    // 1. Hitung 4 Metrik Ringkasan Baterai
+    var gantiUnitSet = {};
+    var totalSwap = 0;
+    var totalRusakQty = 0;
+    var totalLayak = 0;
+
+    allLogs.forEach(function (item) {
+      var st = (item.statusGanti || '').toUpperCase();
+      var qty = parseInt(item.jumlahAki, 10) || 2;
+
+      if (st.indexOf('GANTI') !== -1) {
+        if (item.noUnit && item.noUnit !== '-') gantiUnitSet[item.noUnit] = true;
+        totalRusakQty += qty;
+      }
+      if (st.indexOf('SWAP') !== -1) {
+        totalSwap++;
+      }
+      if (st.indexOf('RUSAK') !== -1 || st.indexOf('SCRAP') !== -1 || st.indexOf('AFKIR') !== -1) {
+        totalRusakQty += qty;
+      }
+      if (st.indexOf('RECHARGE') !== -1 || st.indexOf('LAYAK') !== -1 || st.indexOf('NORMAL') !== -1) {
+        totalLayak++;
+      }
+    });
+
+    var countGantiUnit = Object.keys(gantiUnitSet).length;
+    setMetricText('kpiBatGantiUnit', countGantiUnit + ' Unit');
+    setMetricText('kpiBatSwapUnit', totalSwap + ' Kasus');
+    setMetricText('kpiBatRusakQty', totalRusakQty + ' Aki');
+    setMetricText('kpiBatLayakQty', totalLayak + ' Kasus');
+
+    // 2. Filter data berdasarkan keyword & tindakan
+    var kw = (document.getElementById('batSearchKeyword') ? document.getElementById('batSearchKeyword').value : '').toLowerCase().trim();
+    var filterTind = (document.getElementById('batFilterTindakan') ? document.getElementById('batFilterTindakan').value : 'ALL').toUpperCase();
+
+    var filtered = allLogs.filter(function (item) {
+      var st = (item.statusGanti || '').toUpperCase();
+      if (filterTind !== 'ALL') {
+        if (filterTind === 'GANTI' && st.indexOf('GANTI') === -1) return false;
+        if (filterTind === 'SWAP' && st.indexOf('SWAP') === -1) return false;
+        if (filterTind === 'RUSAK' && (st.indexOf('RUSAK') === -1 && st.indexOf('SCRAP') === -1 && st.indexOf('AFKIR') === -1)) return false;
+        if (filterTind === 'RECHARGE' && st.indexOf('RECHARGE') === -1) return false;
+        if (filterTind === 'LAYAK' && st.indexOf('LAYAK') === -1 && st.indexOf('NORMAL') === -1) return false;
+      }
+
+      if (kw) {
+        var str = (item.noUnit + ' ' + item.merkBaterai + ' ' + item.mekanik + ' ' + item.catatan + ' ' + item.swapUnit).toLowerCase();
+        return str.indexOf(kw) !== -1;
+      }
+      return true;
+    });
+
+    if (typeof sortListByDateDescending === 'function') {
+      filtered = sortListByDateDescending(filtered, 'tanggal');
+    }
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px; font-size: 12.5px;">Belum ada riwayat penggantian atau SWAP baterai yang sesuai filter.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    filtered.forEach(function (item, idx) {
+      var st = (item.statusGanti || '').toUpperCase();
+      var badgeStyle = 'background: #e2e8f0; color: #334155;';
+      var badgeText = escapeHtml(item.statusGanti || 'PEMERIKSAAN');
+
+      if (st.indexOf('GANTI') !== -1) {
+        badgeStyle = 'background: rgba(16, 185, 129, 0.15); color: #059669; border: 1px solid rgba(16, 185, 129, 0.4);';
+        badgeText = 'GANTI BATERAI BARU';
+      } else if (st.indexOf('SWAP') !== -1) {
+        badgeStyle = 'background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.4);';
+        badgeText = 'SWAP BATERAI ARMADA';
+      } else if (st.indexOf('RUSAK') !== -1 || st.indexOf('SCRAP') !== -1) {
+        badgeStyle = 'background: rgba(239, 68, 68, 0.15); color: #dc2626; border: 1px solid rgba(239, 68, 68, 0.4);';
+        badgeText = 'BATERAI RUSAK (SCRAP)';
+      } else if (st.indexOf('RECHARGE') !== -1) {
+        badgeStyle = 'background: rgba(2, 132, 199, 0.15); color: #0284c7; border: 1px solid rgba(2, 132, 199, 0.4);';
+        badgeText = 'RECHARGE / CHARGE ULANG';
+      } else {
+        badgeStyle = 'background: rgba(100, 116, 139, 0.12); color: #475569; border: 1px solid rgba(100, 116, 139, 0.3);';
+        badgeText = 'NORMAL (LAYAK)';
+      }
+
+      var dateDisplay = (typeof formatDateDDMMYYYY === 'function') ? formatDateDDMMYYYY(item.tanggal) : (item.tanggal || '-');
+      var safeUnit = escapeHtml(item.noUnit || '-');
+      var safeMerk = escapeHtml(item.merkBaterai || '-');
+      var safeQty = item.jumlahAki ? (item.jumlahAki + ' Aki') : '2 Aki';
+      var safeVolt = escapeHtml(String(item.voltase || '-'));
+      var safeCCA = escapeHtml(String(item.cca || '-'));
+      var voltCcaStr = safeVolt + (safeCCA !== '-' ? (' / ' + safeCCA + ' CCA') : '');
+
+      var swapDetail = '';
+      if (item.swapUnit) {
+        swapDetail = '<div style="font-size: 11px; font-weight: 700; color: #d97706;">🔄 ' + escapeHtml(item.swapUnit) + '</div>';
+      }
+      var cleanNote = escapeHtml(item.catatan || item.kondisiFisik || '-');
+
+      var photoBtn = '<span style="color: var(--text-dim); font-size: 11px;">-</span>';
+      var photoEntries = [];
+      if (item.photosList && Array.isArray(item.photosList) && item.photosList.length > 0) {
+        item.photosList.forEach(function (u, i) {
+          photoEntries.push({ url: u, caption: (item.photoCaptions && item.photoCaptions[i]) || '' });
+        });
+      } else if (item.urlFoto) {
+        var rawEntries = String(item.urlFoto).split(/(?:,\s*|\r?\n)+/).map(function (e) { return e.trim(); }).filter(Boolean);
+        rawEntries.forEach(function (entry) {
+          var clean = entry.indexOf('|') !== -1 ? entry.split('|')[0].trim() : entry.split(/\s+/)[0].trim();
+          var cap = entry.indexOf('|') !== -1 ? entry.substring(entry.indexOf('|') + 1).trim() : '';
+          if (clean.length > 10 && (clean.indexOf('http') === 0 || clean.indexOf('data:image') === 0)) {
+            photoEntries.push({ url: clean, caption: cap });
+          }
+        });
+      }
+
+      if (photoEntries.length > 0) {
+        photoBtn = '<div style="display: flex; gap: 4px; justify-content: center; align-items: center; flex-wrap: wrap;">';
+        photoEntries.forEach(function (pObj, pIdx) {
+          var directUrl = (typeof getDirectDriveImageUrl === 'function') ? getDirectDriveImageUrl(pObj.url) : pObj.url;
+          var capText = pObj.caption || (typeof getPhotoCaption === 'function' ? getPhotoCaption(pObj.url, pIdx, item) : '');
+          var titleStr = capText ? ('Foto #' + (pIdx + 1) + ': ' + escapeHtml(capText)) : ('Foto Bukti #' + (pIdx + 1));
+          photoBtn += '<span style="cursor: pointer; display: inline-flex; align-items: center; gap: 3px; background: var(--card-bg-subtle); border: 1px solid var(--border-color); padding: 2px 6px; border-radius: 4px; font-size: 10.5px;" onclick="if(typeof openImageModal===\'function\'){ openImageModal(\'' + escapeHtml(directUrl) + '\', \'' + escapeHtml(titleStr) + '\'); } else { window.open(\'' + escapeHtml(directUrl) + '\', \'_blank\'); }" title="' + escapeHtml(titleStr) + '">📷 <small style="font-weight: 700; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escapeHtml(capText || ('#' + (pIdx + 1))) + '</small></span>';
+        });
+        photoBtn += '</div>';
+      }
+
+      html += '<tr style="border-bottom: 1px solid var(--border-subtle);">' +
+        '<td style="text-align: center; color: var(--text-dim);">' + (idx + 1) + '</td>' +
+        '<td style="text-align: center; font-weight: 600; font-size: 11px;">' + dateDisplay + '</td>' +
+        '<td><strong style="color: var(--text-main); font-size: 13px;">' + safeUnit + '</strong></td>' +
+        '<td><div style="font-weight: 700; color: var(--text-main); font-size: 12px;">' + safeMerk + '</div><div style="font-size: 10.5px; color: var(--text-muted);">' + safeQty + '</div></td>' +
+        '<td style="text-align: center;"><span style="display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 800; letter-spacing: 0.3px; ' + badgeStyle + '">' + badgeText + '</span></td>' +
+        '<td>' + swapDetail + '<div style="font-size: 11px; color: var(--text-muted); max-width: 200px; word-break: break-word;">' + cleanNote + '</div></td>' +
+        '<td style="text-align: center; font-size: 11px; font-weight: 700; color: var(--text-main);">' + voltCcaStr + '</td>' +
+        '<td style="font-size: 11.5px; color: var(--text-main);">' + escapeHtml(item.mekanik || '-') + '</td>' +
+        '<td style="text-align: center;">' + photoBtn + '</td>' +
+        '</tr>';
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  function handleBatterySubmit(e) {
+    e.preventDefault();
+    var inpSwap = document.getElementById('batSwapUnit');
+    var swapVal = inpSwap ? inpSwap.value.trim().toUpperCase() : '';
+    var qtyVal = document.getElementById('batJumlahAki') ? document.getElementById('batJumlahAki').value : '2';
+    var tglVal = document.getElementById('batTanggal') ? document.getElementById('batTanggal').value : new Date().toISOString().slice(0, 10);
+    var statusVal = document.getElementById('batStatusGanti').value;
+    var userNote = document.getElementById('batCatatan').value.trim();
+
+    var compiledNotes = userNote;
+    if (swapVal) compiledNotes += ' [SWAP: ' + swapVal + ']';
+    if (qtyVal) compiledNotes += ' [Qty: ' + qtyVal + ' Aki]';
+
+    var payload = {
+      tanggal: tglVal,
+      noUnit: document.getElementById('batNoUnit').value,
+      merkBaterai: document.getElementById('batMerk').value.trim(),
+      voltase: document.getElementById('batVoltase').value,
+      cca: document.getElementById('batCCA') ? document.getElementById('batCCA').value : '',
+      ir: document.getElementById('batIR') ? document.getElementById('batIR').value : '',
+      beratJenis: '-',
+      kondisiFisik: document.getElementById('batFisik').value,
+      statusGanti: statusVal,
+      jumlahAki: qtyVal,
+      swapUnit: swapVal,
+      mekanik: document.getElementById('batMekanik').value.trim(),
+      catatan: compiledNotes.trim(),
+      driveFolderId: localStorage.getItem('AE_DRIVE_FOLDER_ID') || '',
+      imagesBase64: (typeof getMultiPhotosBase64 === 'function') ? getMultiPhotosBase64('bat') : (multiPhotosState.bat || []),
+      captions: (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('bat') : []
+    };
+
+    var currentCaptions = (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('bat') : [];
+
+    var optimisticEntry = {
+      source: 'bat_log',
+      tanggal: payload.tanggal,
+      noUnit: payload.noUnit,
+      merkBaterai: payload.merkBaterai,
+      voltase: payload.voltase,
+      cca: payload.cca,
+      ir: payload.ir,
+      kondisiFisik: payload.kondisiFisik,
+      statusGanti: payload.statusGanti,
+      jumlahAki: payload.jumlahAki,
+      swapUnit: payload.swapUnit,
+      mekanik: payload.mekanik,
+      catatan: payload.catatan,
+      urlFoto: (payload.imagesBase64 && payload.imagesBase64[0]) ? payload.imagesBase64[0] : '',
+      photosList: payload.imagesBase64 || [],
+      photoCaptions: currentCaptions || []
+    };
+
+    globalBatteryLogs.unshift(optimisticEntry);
+    setMetricText('kpiBattery', globalBatteryLogs.length);
+
+    // Simpan ke localStorage agar awet di peramban
+    try {
+      var saved = JSON.parse(localStorage.getItem('AE_BATTERY_LOGS') || '[]');
+      saved.unshift(optimisticEntry);
+      if (saved.length > 100) saved = saved.slice(0, 100);
+      localStorage.setItem('AE_BATTERY_LOGS', JSON.stringify(saved));
+    } catch (e) {
+      console.warn('Gagal cache baterai ke localStorage:', e);
+    }
+
+    showToast('Menyimpan data baterai & mengunggah ' + (payload.imagesBase64.length) + ' foto...', 'info');
+
+    function onCompleteReset() {
+      document.getElementById('batteryForm').reset();
+      resetMultiPhotos('bat');
+      var elBatTgl = document.getElementById('batTanggal');
+      if (elBatTgl) elBatTgl.value = new Date().toISOString().slice(0, 10);
+      var grp = document.getElementById('batSwapUnitGroup');
+      if (grp) grp.style.display = 'none';
+      switchBatterySubTab('log');
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+              if (res.idBat) {
+                savePhotoCaptionsMapping(res.idBat, currentCaptions);
+                savePhotoCaptionsMapping(String(res.idBat).toUpperCase(), currentCaptions);
+              }
+              if (payload.noUnit && payload.tanggal) {
+                savePhotoCaptionsMapping(payload.noUnit + '_' + payload.tanggal, currentCaptions);
+              }
+            }
+            showToast('Data monitoring baterai berhasil dicatat ke spreadsheet!', 'success');
+            onCompleteReset();
+          } else {
+            showToast('Gagal: ' + (res ? res.error : 'Error'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          showToast('Error koneksi: ' + err.message, 'error');
+        })
+        .submitBatteryLog(payload);
+    } else {
+      if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+        savePhotoCaptionsMapping(payload.imagesBase64, currentCaptions);
+      }
+      showToast('Data baterai berhasil disimpan (Mode Offline).', 'success');
+      onCompleteReset();
+    }
+  }
+</script>

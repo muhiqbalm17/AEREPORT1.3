@@ -1,0 +1,1035 @@
+<script>
+/**
+ * ============================================================================
+ * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+ * File: js-supabase.html
+ * Fungsi: Supabase Client SDK, Storage Uploader & Universal google.script.run Proxy Bridge (Tahap 3)
+ * Penanggung Jawab: ZettBOT by Zettbos (System Architect & Lead Engineering Mentor)
+ * ============================================================================
+ */
+
+(function () {
+  'use strict';
+
+  // 1. Kredensial Supabase Resmi Proyek AE-Report
+  var SUPABASE_URL = 'https://msilcjkjnrolekvpgupa.supabase.co';
+  var SUPABASE_ANON_KEY = 'sb_publishable_iDGKz6yQsi7Y_1O1f4wrtg_gXLEVtjB';
+  var BUCKET_NAME = 'ae-dokumentasi';
+
+  var _client = null;
+
+  function getSupabaseClient() {
+    if (_client) return _client;
+    if (typeof window.supabase !== 'undefined' && typeof window.supabase.createClient === 'function') {
+      _client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      return _client;
+    }
+    console.error('Supabase JS SDK (@supabase/supabase-js) belum dimuat.');
+    return null;
+  }
+
+  // --------------------------------------------------------------------------
+  // HELPER: Upload Base64 / File ke Supabase Storage (Bucket ae-dokumentasi)
+  // --------------------------------------------------------------------------
+  async function uploadBase64ToSupabaseStorage(base64Data, prefix) {
+    var client = getSupabaseClient();
+    if (!client) throw new Error('Supabase client tidak tersedia.');
+    if (!base64Data || typeof base64Data !== 'string') return '';
+
+    // Jika sudah berupa URL HTTP, tidak perlu diupload ulang
+    if (base64Data.indexOf('http://') === 0 || base64Data.indexOf('https://') === 0) {
+      return base64Data;
+    }
+
+    try {
+      var parts = base64Data.split(';base64,');
+      var contentType = 'image/jpeg';
+      var rawBase64 = parts[0];
+
+      if (parts.length > 1) {
+        contentType = parts[0].replace('data:', '') || 'image/jpeg';
+        rawBase64 = parts[1];
+      }
+
+      var byteCharacters = atob(rawBase64);
+      var byteNumbers = new Array(byteCharacters.length);
+      for (var i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      var byteArray = new Uint8Array(byteNumbers);
+      var blob = new Blob([byteArray], { type: contentType });
+
+      var ext = contentType.indexOf('png') !== -1 ? 'png' : 'jpg';
+      var cleanPrefix = String(prefix || 'FOTO').replace(/[^a-zA-Z0-9_]/g, '_');
+      var timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+      var randomStr = Math.random().toString(36).substring(2, 7);
+      var filePath = cleanPrefix + '_' + timestamp + '_' + randomStr + '.' + ext;
+
+      var uploadRes = await client.storage
+        .from(BUCKET_NAME)
+        .upload(filePath, blob, {
+          contentType: contentType,
+          upsert: true
+        });
+
+      if (uploadRes.error) {
+        console.warn('Peringatan upload storage Supabase:', uploadRes.error);
+        // Jika bucket belum dibuat, kembalikan string base64 asli sebagai graceful fallback
+        return base64Data;
+      }
+
+      var publicUrlRes = client.storage.from(BUCKET_NAME).getPublicUrl(filePath);
+      return (publicUrlRes && publicUrlRes.data && publicUrlRes.data.publicUrl) ? publicUrlRes.data.publicUrl : '';
+    } catch (e) {
+      console.warn('Gagal memproses upload foto:', e.message);
+      return base64Data;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // HELPER: Format Tanggal & Foto Captions
+  // --------------------------------------------------------------------------
+  function parseDelimitedPhotoEntries(cellValue) {
+    if (!cellValue) return { photosList: [], photoCaptions: [] };
+    var rawStr = String(cellValue).trim();
+    if (!rawStr) return { photosList: [], photoCaptions: [] };
+    var tokens = rawStr.split(/[\r\n,]+/);
+    var photosList = [];
+    var photoCaptions = [];
+    tokens.forEach(function (token) {
+      var item = token.trim();
+      if (!item) return;
+      var pipeIdx = item.indexOf('|');
+      if (pipeIdx !== -1) {
+        photosList.push(item.substring(0, pipeIdx).trim());
+        photoCaptions.push(item.substring(pipeIdx + 1).trim());
+      } else {
+        photosList.push(item);
+        photoCaptions.push('');
+      }
+    });
+    return { photosList: photosList, photoCaptions: photoCaptions };
+  }
+
+  function combineUrlsWithCaptions(urls, captions) {
+    if (!urls || urls.length === 0) return '';
+    var combined = [];
+    for (var i = 0; i < urls.length; i++) {
+      var u = String(urls[i] || '').trim();
+      if (!u) continue;
+      var cap = (captions && captions[i]) ? String(captions[i]).replace(/[|\r\n]/g, ' ').trim() : '';
+      combined.push(cap ? (u + '|' + cap) : u);
+    }
+    return combined.join(', ');
+  }
+
+  function isDateInPeriod(tglStr, filterMonth, filterYear) {
+    if (typeof window.isDateInSelectedPeriod === 'function') {
+      return window.isDateInSelectedPeriod(tglStr, filterMonth, filterYear);
+    }
+    if (!tglStr) return false;
+    var isAllMonth = (filterMonth === 'all' || !filterMonth);
+    var isAllYear = (filterYear === 'all' || !filterYear);
+    var str = String(tglStr).trim();
+    var dateOnly = str.split(/[T\s]/)[0];
+    var parts = dateOnly.split(/[-/.]/);
+    var y, m;
+    if (parts.length >= 3) {
+      if (parts[0].length === 4) {
+        y = parseInt(parts[0], 10);
+        m = parseInt(parts[1], 10);
+      } else {
+        y = parseInt(parts[2], 10);
+        if (y < 100) y = 2000 + y;
+        m = parseInt(parts[1], 10);
+      }
+    } else {
+      var d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        y = d.getFullYear();
+        m = d.getMonth() + 1;
+      }
+    }
+    if (!y || !m) return false;
+    if (!isAllYear && y !== parseInt(filterYear, 10)) return false;
+    if (!isAllMonth && m !== parseInt(filterMonth, 10)) return false;
+    return true;
+  }
+
+  // --------------------------------------------------------------------------
+  // SUPABASE SERVICE: PENGGANTI SELURUH FUNGSI BACKEND GAS (SUB-SECOND QUERY)
+  // --------------------------------------------------------------------------
+  var SupabaseBackend = {
+    // 1. Initial Metadata
+    getInitialMetadata: async function () {
+      var client = getSupabaseClient();
+      var result = {
+        success: true,
+        units: [],
+        categories: [],
+        mechanics: [],
+        locations: [],
+        parts: [],
+        companyLogoUrl: ''
+      };
+
+      try {
+        var pUnits = client.from('master_unit').select('*').order('no_unit', { ascending: true });
+        var pCats = client.from('master_category').select('kategori').order('kategori', { ascending: true });
+        var pMeks = client.from('master_mechanic').select('*').order('nama', { ascending: true });
+        var pLoks = client.from('master_location').select('*').order('nama_lokasi', { ascending: true });
+        var pParts = client.from('master_part').select('*').order('part_number', { ascending: true });
+        var pSettings = client.from('app_settings').select('*');
+
+        var resArr = await Promise.all([pUnits, pCats, pMeks, pLoks, pParts, pSettings]);
+
+        if (resArr[0].data) {
+          result.units = resArr[0].data.map(function (u) {
+            return {
+              noUnit: String(u.no_unit || '').trim().toUpperCase(),
+              tipe: u.tipe || 'HAULER',
+              model: u.model || '',
+              serialNumber: u.serial_number || '',
+              lokasiPit: u.lokasi_pit || '',
+              hmTerakhir: u.hm_terakhir !== null ? String(u.hm_terakhir) : '0'
+            };
+          });
+        }
+
+        if (resArr[1].data && resArr[1].data.length > 0) {
+          result.categories = resArr[1].data.map(function (c) {
+            return String(c.kategori || '').trim().toUpperCase();
+          });
+        } else {
+          result.categories = [
+            'STARTING MOTOR SYSTEM',
+            'CHARGING SYSTEM (ALTERNATOR)',
+            'LIGHTING & ACCESSORIES',
+            'CABIN & INSTRUMENT CLUSTER',
+            'SAFETY DEVICE & INTERLOCK',
+            'BATTERY & CABLING',
+            'AC SYSTEM',
+            'WIRING HARNESS'
+          ];
+        }
+
+        if (resArr[2].data) {
+          result.mechanics = resArr[2].data.map(function (m) {
+            return {
+              nama: String(m.nama || '').trim().toUpperCase(),
+              nrp: m.nrp || '-',
+              shift: m.shift || '-',
+              keahlian: m.keahlian || 'AUTO ELECTRICIAN'
+            };
+          });
+        }
+
+        if (resArr[3].data) {
+          result.locations = resArr[3].data.map(function (l) {
+            return {
+              namaLokasi: String(l.nama_lokasi || '').trim().toUpperCase(),
+              tipeArea: l.tipe_area || 'PIT AREA',
+              keterangan: l.keterangan || ''
+            };
+          });
+        }
+
+        if (resArr[4].data) {
+          result.parts = resArr[4].data.map(function (p) {
+            return {
+              partNumber: String(p.part_number || '').trim().toUpperCase(),
+              namaPart: String(p.nama_part || '').trim().toUpperCase(),
+              kategori: p.kategori || '',
+              merk: p.merk || '',
+              satuan: p.satuan || 'PCS',
+              unitModel: p.unit_model || ''
+            };
+          });
+        }
+
+        if (resArr[5].data) {
+          resArr[5].data.forEach(function (s) {
+            if (String(s.setting_key || '').toUpperCase() === 'COMPANY_LOGO_URL') {
+              result.companyLogoUrl = String(s.setting_value || '').trim();
+            }
+          });
+        }
+
+        return result;
+      } catch (err) {
+        console.error('getInitialMetadata error:', err);
+        return { success: false, error: err.message };
+      }
+    },
+
+    // 2. Log Pekerjaan (Server-side Pagination & Filter)
+    getWorkReportsPaginated: async function (page, pageSize, categoryFilter, searchKeyword) {
+      var client = getSupabaseClient();
+      var p = Math.max(1, parseInt(page, 10) || 1);
+      var ps = Math.max(1, parseInt(pageSize, 10) || 25);
+      var offset = (p - 1) * ps;
+
+      try {
+        var query = client.from('log_pekerjaan').select('*', { count: 'exact' });
+
+        if (categoryFilter && String(categoryFilter).trim()) {
+          query = query.ilike('kategori_pekerjaan', String(categoryFilter).trim());
+        }
+
+        if (searchKeyword && String(searchKeyword).trim()) {
+          var kw = String(searchKeyword).trim();
+          query = query.or('no_unit.ilike.%' + kw + '%,nama_mekanik.ilike.%' + kw + '%,deskripsi_pekerjaan.ilike.%' + kw + '%,id_report.ilike.%' + kw + '%');
+        }
+
+        query = query.order('tanggal', { ascending: false }).order('created_at', { ascending: false }).range(offset, offset + ps - 1);
+
+        var res = await query;
+        if (res.error) throw res.error;
+
+        var mapped = (res.data || []).map(function (r) {
+          var parsedPhotos = parseDelimitedPhotoEntries(r.url_foto_dokumentasi || [r.url_foto_before, r.url_foto_after].filter(Boolean).join(', '));
+          return {
+            idReport: r.id_report || '',
+            timestamp: r.timestamp_input || '',
+            status: r.status || 'RFU',
+            tanggal: r.tanggal || '',
+            jamMulai: r.jam_mulai || '',
+            jamSelesai: r.jam_selesai || '',
+            shift: r.shift || 'Siang',
+            noUnit: r.no_unit || '',
+            modelUnit: r.model_unit || '',
+            lokasiPekerjaan: r.lokasi_pekerjaan || '',
+            hmUnit: r.hm_unit !== null ? String(r.hm_unit) : '',
+            namaMekanik: r.nama_mekanik || '',
+            kategoriPekerjaan: r.kategori_pekerjaan || '',
+            statusPart: r.status_part || 'GOOD',
+            downtimeJam: r.downtime_jam !== null ? String(r.downtime_jam) : '0',
+            deskripsiPekerjaan: r.deskripsi_pekerjaan || '',
+            urlFotoBefore: r.url_foto_before || '',
+            urlFotoAfter: r.url_foto_after || '',
+            urlFotoDokumentasi: r.url_foto_dokumentasi || '',
+            photosList: parsedPhotos.photosList,
+            photoCaptions: parsedPhotos.photoCaptions
+          };
+        });
+
+        var totalCount = res.count || mapped.length;
+        return {
+          success: true,
+          reports: mapped,
+          totalCount: totalCount,
+          page: p,
+          pageSize: ps,
+          totalPages: Math.ceil(totalCount / ps) || 1
+        };
+      } catch (err) {
+        console.error('getWorkReportsPaginated error:', err);
+        return { success: false, error: err.message };
+      }
+    },
+
+    submitWorkReport: async function (payload) {
+      var client = getSupabaseClient();
+      try {
+        var uploadedUrls = [];
+        if (payload.imagesBase64 && Array.isArray(payload.imagesBase64) && payload.imagesBase64.length > 0) {
+          for (var i = 0; i < payload.imagesBase64.length; i++) {
+            var url = await uploadBase64ToSupabaseStorage(payload.imagesBase64[i], 'REPORT_' + (payload.noUnit || 'UNIT'));
+            if (url) uploadedUrls.push(url);
+          }
+        }
+
+        var allUrlsCombined = combineUrlsWithCaptions(uploadedUrls, payload.captions);
+        var urlBefore = (uploadedUrls.length > 0) ? (uploadedUrls[0] + (payload.captions && payload.captions[0] ? '|' + String(payload.captions[0]).trim() : '')) : (payload.urlFotoBefore || '');
+        var urlAfter = (uploadedUrls.length > 1) ? (uploadedUrls[1] + (payload.captions && payload.captions[1] ? '|' + String(payload.captions[1]).trim() : '')) : (payload.urlFotoAfter || '');
+
+        var now = new Date();
+        var nowStr = now.toLocaleDateString('id-ID') + ' ' + now.toLocaleTimeString('id-ID');
+
+        var row = {
+          timestamp_input: nowStr,
+          status: payload.status || 'RFU',
+          tanggal: payload.tanggal || now.toISOString().slice(0, 10),
+          jam_mulai: payload.jamMulai || '',
+          jam_selesai: payload.jamSelesai || '',
+          shift: payload.shift || 'Siang',
+          no_unit: String(payload.noUnit || '').toUpperCase().trim(),
+          model_unit: payload.modelUnit || '',
+          lokasi_pekerjaan: payload.lokasiPekerjaan || '',
+          hm_unit: parseFloat(String(payload.hmUnit || '').replace(/,/g, '.')) || 0,
+          nama_mekanik: payload.namaMekanik || '',
+          kategori_pekerjaan: payload.kategoriPekerjaan || '',
+          status_part: payload.statusPart || 'GOOD',
+          downtime_jam: parseFloat(String(payload.downtimeJam || '').replace(/,/g, '.')) || 0,
+          deskripsi_pekerjaan: payload.deskripsiPekerjaan || '',
+          url_foto_before: urlBefore,
+          url_foto_after: urlAfter,
+          url_foto_dokumentasi: allUrlsCombined
+        };
+
+        var insRes = await client.from('log_pekerjaan').insert([row]).select('id_report').single();
+        if (insRes.error) throw insRes.error;
+
+        return { success: true, reportId: insRes.data.id_report };
+      } catch (err) {
+        console.error('submitWorkReport error:', err);
+        return { success: false, error: err.message };
+      }
+    },
+
+    updateWorkReport: async function (payload) {
+      var client = getSupabaseClient();
+      try {
+        var upd = {
+          status: payload.status,
+          tanggal: payload.tanggal,
+          jam_mulai: payload.jamMulai,
+          jam_selesai: payload.jamSelesai,
+          shift: payload.shift,
+          model_unit: payload.modelUnit,
+          lokasi_pekerjaan: payload.lokasiPekerjaan,
+          hm_unit: parseFloat(payload.hmUnit) || 0,
+          nama_mekanik: payload.namaMekanik,
+          kategori_pekerjaan: payload.kategoriPekerjaan,
+          status_part: payload.statusPart,
+          downtime_jam: parseFloat(payload.downtimeJam) || 0,
+          deskripsi_pekerjaan: payload.deskripsiPekerjaan
+        };
+        var res = await client.from('log_pekerjaan').update(upd).eq('id_report', payload.idReport);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    deleteWorkReport: async function (payload) {
+      var client = getSupabaseClient();
+      try {
+        var res = await client.from('log_pekerjaan').delete().eq('id_report', payload.idReport);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    // 3. Log Baterai
+    getBatteryLogs: async function () {
+      var client = getSupabaseClient();
+      try {
+        var res = await client.from('log_baterai').select('*').order('created_at', { ascending: false });
+        if (res.error) throw res.error;
+        var mapped = (res.data || []).map(function (r) {
+          return {
+            idBaterai: r.id_baterai || '',
+            tanggal: r.tanggal || '',
+            noUnit: r.no_unit || '',
+            merkBaterai: r.merk_baterai || '',
+            voltase: r.voltase !== null ? String(r.voltase) : '',
+            cca: r.cca !== null ? String(r.cca) : '',
+            ir: r.ir !== null ? String(r.ir) : '',
+            kondisiFisik: r.kondisi_fisik || 'BAIK',
+            statusGanti: r.status_ganti || 'NORMAL',
+            mekanik: r.mekanik || '',
+            catatan: r.catatan || '',
+            urlFoto: r.url_foto || ''
+          };
+        });
+        return { success: true, logs: mapped };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    submitBatteryLog: async function (payload) {
+      var client = getSupabaseClient();
+      try {
+        var photoUrl = payload.urlFoto || '';
+        if (payload.imagesBase64 && Array.isArray(payload.imagesBase64) && payload.imagesBase64.length > 0) {
+          var urls = [];
+          for (var i = 0; i < payload.imagesBase64.length; i++) {
+            var u = await uploadBase64ToSupabaseStorage(payload.imagesBase64[i], 'BAT_' + (payload.noUnit || 'UNIT'));
+            if (u) urls.push(u);
+          }
+          photoUrl = combineUrlsWithCaptions(urls, payload.captions);
+        }
+
+        var row = {
+          tanggal: payload.tanggal,
+          no_unit: String(payload.noUnit || '').toUpperCase().trim(),
+          merk_baterai: payload.merkBaterai,
+          voltase: parseFloat(payload.voltase) || null,
+          cca: parseInt(payload.cca, 10) || null,
+          ir: parseFloat(payload.ir) || null,
+          kondisi_fisik: payload.kondisiFisik || 'BAIK',
+          status_ganti: payload.statusGanti || 'NORMAL',
+          mekanik: payload.mekanik,
+          catatan: payload.catatan,
+          url_foto: photoUrl
+        };
+
+        var ins = await client.from('log_baterai').insert([row]).select('id_baterai').single();
+        if (ins.error) throw ins.error;
+        return { success: true, idBaterai: ins.data.id_baterai };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    // 4. Log Breakdown (FAR/RCFA)
+    getBreakdownLogs: async function () {
+      var client = getSupabaseClient();
+      try {
+        var res = await client.from('log_breakdown').select('*').order('created_at', { ascending: false });
+        if (res.error) throw res.error;
+        var mapped = (res.data || []).map(function (r) {
+          var p = parseDelimitedPhotoEntries(r.url_foto);
+          return {
+            idFar: r.id_far || '',
+            tanggal: r.tanggal || '',
+            noUnit: r.no_unit || '',
+            hmUnit: r.hm_unit !== null ? String(r.hm_unit) : '',
+            partKomponen: r.part_komponen || '',
+            partNumber: r.part_number || '',
+            namaPart: r.nama_part || '',
+            komponenGagal: r.komponen_gagal || '',
+            downtimeTotal: r.downtime_total !== null ? String(r.downtime_total) : '0',
+            rootCause: r.root_cause || '',
+            actionTaken: r.action_taken || '',
+            preventionPlan: r.prevention_plan || '',
+            statusRepair: r.status_repair || 'COMPLETED',
+            urlFoto: r.url_foto || '',
+            photosList: p.photosList,
+            photoCaptions: p.photoCaptions
+          };
+        });
+        return { success: true, logs: mapped };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    submitBreakdownAnalysis: async function (payload) {
+      var client = getSupabaseClient();
+      try {
+        var photoUrl = payload.urlFoto || '';
+        if (payload.imagesBase64 && Array.isArray(payload.imagesBase64) && payload.imagesBase64.length > 0) {
+          var urls = [];
+          for (var i = 0; i < payload.imagesBase64.length; i++) {
+            var u = await uploadBase64ToSupabaseStorage(payload.imagesBase64[i], 'FAR_' + (payload.noUnit || 'UNIT'));
+            if (u) urls.push(u);
+          }
+          photoUrl = combineUrlsWithCaptions(urls, payload.captions);
+        }
+
+        var row = {
+          tanggal: payload.tanggal,
+          no_unit: String(payload.noUnit || '').toUpperCase().trim(),
+          hm_unit: parseFloat(payload.hmUnit) || 0,
+          part_komponen: payload.partKomponen || '',
+          part_number: payload.partNumber || '',
+          nama_part: payload.namaPart || '',
+          komponenGagal: payload.komponenGagal || '',
+          downtime_total: parseFloat(payload.downtimeTotal) || 0,
+          root_cause: payload.rootCause || '',
+          action_taken: payload.actionTaken || '',
+          prevention_plan: payload.preventionPlan || '',
+          status_repair: payload.statusRepair || 'COMPLETED',
+          url_foto: photoUrl
+        };
+
+        var ins = await client.from('log_breakdown').insert([row]).select('id_far').single();
+        if (ins.error) throw ins.error;
+        return { success: true, idFar: ins.data.id_far };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    updateBreakdownPhotoCaptions: async function (idFar, captions) {
+      var client = getSupabaseClient();
+      try {
+        var getRes = await client.from('log_breakdown').select('url_foto').eq('id_far', idFar).single();
+        if (getRes.error) throw getRes.error;
+        var p = parseDelimitedPhotoEntries(getRes.data.url_foto);
+        var newCombined = combineUrlsWithCaptions(p.photosList, captions);
+        var upd = await client.from('log_breakdown').update({ url_foto: newCombined }).eq('id_far', idFar);
+        if (upd.error) throw upd.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    deleteBreakdownLog: async function (payload) {
+      var client = getSupabaseClient();
+      try {
+        var res = await client.from('log_breakdown').delete().eq('id_far', payload.idFar);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    // 5. Log Inspeksi
+    getInspectionLogs: async function () {
+      var client = getSupabaseClient();
+      try {
+        var res = await client.from('log_inspeksi').select('*').order('created_at', { ascending: false });
+        if (res.error) throw res.error;
+        var mapped = (res.data || []).map(function (r) {
+          var p = parseDelimitedPhotoEntries(r.url_foto);
+          return {
+            idInspeksi: r.id_inspeksi || '',
+            tanggal: r.tanggal || '',
+            jamMulai: r.jam_mulai || '',
+            jamSelesai: r.jam_selesai || '',
+            noUnit: r.no_unit || '',
+            hmUnit: r.hm_unit !== null ? String(r.hm_unit) : '',
+            inspektor: r.inspektor || '',
+            startingMotor: r.starting_motor || 'GOOD',
+            alternator: r.alternator || 'GOOD',
+            lightingSystem: r.lighting_system || 'GOOD',
+            wiringHarness: r.wiring_harness || 'GOOD',
+            catatan: r.catatan || '',
+            urlFoto: r.url_foto || '',
+            tipeInspeksi: r.tipe_inspeksi || 'ELEKTRIKAL',
+            photosList: p.photosList,
+            photoCaptions: p.photoCaptions
+          };
+        });
+        return { success: true, logs: mapped };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    submitInspectionLog: async function (payload) {
+      var client = getSupabaseClient();
+      try {
+        var photoUrl = payload.urlFoto || '';
+        if (payload.imagesBase64 && Array.isArray(payload.imagesBase64) && payload.imagesBase64.length > 0) {
+          var urls = [];
+          for (var i = 0; i < payload.imagesBase64.length; i++) {
+            var u = await uploadBase64ToSupabaseStorage(payload.imagesBase64[i], 'INSP_' + (payload.noUnit || 'UNIT'));
+            if (u) urls.push(u);
+          }
+          photoUrl = combineUrlsWithCaptions(urls, payload.captions);
+        }
+
+        var row = {
+          tanggal: payload.tanggal,
+          jam_mulai: payload.jamMulai || '',
+          jam_selesai: payload.jamSelesai || '',
+          no_unit: String(payload.noUnit || '').toUpperCase().trim(),
+          hm_unit: parseFloat(payload.hmUnit) || 0,
+          inspektor: payload.inspektor || '',
+          starting_motor: payload.startingMotor || 'GOOD',
+          alternator: payload.alternator || 'GOOD',
+          lighting_system: payload.lightingSystem || 'GOOD',
+          wiring_harness: payload.wiringHarness || 'GOOD',
+          catatan: payload.catatan || '',
+          url_foto: photoUrl,
+          tipe_inspeksi: (payload.tipeInspeksi || 'ELEKTRIKAL').toUpperCase()
+        };
+
+        var ins = await client.from('log_inspeksi').insert([row]).select('id_inspeksi').single();
+        if (ins.error) throw ins.error;
+        return { success: true, idInspeksi: ins.data.id_inspeksi };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    // 6. Log PM
+    getPMLogs: async function () {
+      var client = getSupabaseClient();
+      try {
+        var res = await client.from('log_pm').select('*').order('created_at', { ascending: false });
+        if (res.error) throw res.error;
+        var mapped = (res.data || []).map(function (r) {
+          var p = parseDelimitedPhotoEntries(r.url_foto);
+          return {
+            idPM: r.id_pm || '',
+            tanggal: r.tanggal || '',
+            jamMulai: r.jam_mulai || '',
+            jamSelesai: r.jam_selesai || '',
+            noUnit: r.no_unit || '',
+            pmLevel: r.pm_level || 'PM1',
+            hmUnit: r.hm_unit !== null ? String(r.hm_unit) : '',
+            namaMekanik: r.nama_mekanik || '',
+            remarks: r.remarks || '',
+            urlFoto: r.url_foto || '',
+            photosList: p.photosList,
+            photoCaptions: p.photoCaptions
+          };
+        });
+        return { success: true, logs: mapped };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    submitPMLog: async function (payload) {
+      var client = getSupabaseClient();
+      try {
+        var photoUrl = payload.urlFoto || '';
+        if (payload.imagesBase64 && Array.isArray(payload.imagesBase64) && payload.imagesBase64.length > 0) {
+          var urls = [];
+          for (var i = 0; i < payload.imagesBase64.length; i++) {
+            var u = await uploadBase64ToSupabaseStorage(payload.imagesBase64[i], 'PM_' + (payload.noUnit || 'UNIT'));
+            if (u) urls.push(u);
+          }
+          photoUrl = combineUrlsWithCaptions(urls, payload.captions);
+        }
+
+        var row = {
+          tanggal: payload.tanggal,
+          jam_mulai: payload.jamMulai || '',
+          jam_selesai: payload.jamSelesai || '',
+          no_unit: String(payload.noUnit || '').toUpperCase().trim(),
+          pm_level: payload.pmLevel || 'PM1',
+          hm_unit: parseFloat(payload.hmUnit) || 0,
+          nama_mekanik: payload.namaMekanik || '',
+          remarks: payload.remarks || '',
+          url_foto: photoUrl
+        };
+
+        var ins = await client.from('log_pm').insert([row]).select('id_pm').single();
+        if (ins.error) throw ins.error;
+        return { success: true, idPM: ins.data.id_pm };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    deletePMLog: async function (payload) {
+      var client = getSupabaseClient();
+      try {
+        var res = await client.from('log_pm').delete().eq('id_pm', payload.idPM);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    // 7. Dashboard Metrics
+    getDashboardMetrics: async function (month, year) {
+      var client = getSupabaseClient();
+      try {
+        var pBat = client.from('log_baterai').select('tanggal');
+        var pPM = client.from('log_pm').select('tanggal');
+        var pInsp = client.from('log_inspeksi').select('tanggal');
+        var pRep = client.from('log_pekerjaan').select('tanggal, timestamp_input, no_unit, status_part');
+        var pBrk = client.from('log_breakdown').select('tanggal, no_unit, status_repair');
+
+        var resArr = await Promise.all([pBat, pPM, pInsp, pRep, pBrk]);
+
+        var totalBat = 0;
+        (resArr[0].data || []).forEach(function (b) {
+          if (isDateInPeriod(b.tanggal, month, year)) totalBat++;
+        });
+
+        var totalPM = 0;
+        (resArr[1].data || []).forEach(function (p) {
+          if (isDateInPeriod(p.tanggal, month, year)) totalPM++;
+        });
+
+        var totalInsp = 0;
+        (resArr[2].data || []).forEach(function (i) {
+          if (isDateInPeriod(i.tanggal, month, year)) totalInsp++;
+        });
+
+        var totalReports = 0;
+        var uniquePartKeys = {};
+
+        (resArr[3].data || []).forEach(function (r) {
+          var tgl = r.tanggal || r.timestamp_input;
+          if (isDateInPeriod(tgl, month, year)) {
+            totalReports++;
+            var sp = String(r.status_part || '').toUpperCase();
+            if (sp === 'BAD' || sp === 'REPLACE' || sp === 'REPLACE PART') {
+              uniquePartKeys[String(r.no_unit).trim().toUpperCase() + '_' + String(tgl).trim()] = true;
+            }
+          }
+        });
+
+        (resArr[4].data || []).forEach(function (b) {
+          if (isDateInPeriod(b.tanggal, month, year)) {
+            var st = String(b.status_repair || 'REPLACE').toUpperCase();
+            if (st === 'REPLACE' || st === 'WAITING PART') {
+              uniquePartKeys[String(b.no_unit).trim().toUpperCase() + '_' + String(b.tanggal).trim()] = true;
+            }
+          }
+        });
+
+        var totalReplaceCases = Object.keys(uniquePartKeys).length;
+
+        return {
+          success: true,
+          metrics: {
+            totalBattery: totalBat,
+            totalPM: totalPM,
+            totalInspection: totalInsp,
+            totalReports: totalReports,
+            partRatio: totalReplaceCases + ' Kasus'
+          }
+        };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    // 8. Otorisasi PIN Admin & Pengaturan
+    verifyAdminPin: async function (enteredPin) {
+      var client = getSupabaseClient();
+      try {
+        var res = await client.from('app_settings').select('setting_value').eq('setting_key', 'ADMIN_PIN').single();
+        var correctPin = (res.data && res.data.setting_value) ? String(res.data.setting_value).trim() : '1234';
+        if (String(enteredPin).trim() === correctPin) {
+          return { success: true, authorized: true };
+        } else {
+          return { success: false, message: 'PIN Admin Salah.' };
+        }
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    changeAdminPin: async function (oldPin, newPin) {
+      var client = getSupabaseClient();
+      try {
+        var authCheck = await this.verifyAdminPin(oldPin);
+        if (!authCheck.success) return authCheck;
+        var upd = await client.from('app_settings').update({ setting_value: String(newPin).trim() }).eq('setting_key', 'ADMIN_PIN');
+        if (upd.error) throw upd.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    uploadCompanyLogo: async function (base64Data, filename) {
+      var client = getSupabaseClient();
+      try {
+        var logoUrl = await uploadBase64ToSupabaseStorage(base64Data, 'COMPANY_LOGO');
+        if (!logoUrl) throw new Error('Gagal mengupload logo ke Supabase Storage.');
+
+        var upd = await client.from('app_settings').upsert({
+          setting_key: 'COMPANY_LOGO_URL',
+          setting_value: logoUrl,
+          description: 'URL Logo Resmi Perusahaan untuk Kop Surat Dokumen PDF'
+        });
+        if (upd.error) throw upd.error;
+        return { success: true, logoUrl: logoUrl };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    deleteCompanyLogo: async function () {
+      var client = getSupabaseClient();
+      try {
+        var upd = await client.from('app_settings').update({ setting_value: '' }).eq('setting_key', 'COMPANY_LOGO_URL');
+        if (upd.error) throw upd.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    // 9. Master CRUD Operations
+    getAllMasterData: async function () {
+      return await this.getInitialMetadata();
+    },
+
+    addMasterUnit: async function (unit) {
+      var client = getSupabaseClient();
+      try {
+        var row = {
+          no_unit: String(unit.noUnit || '').trim().toUpperCase(),
+          tipe: String(unit.tipe || 'HAULER').trim().toUpperCase(),
+          model: String(unit.model || '').trim(),
+          serial_number: String(unit.serialNumber || '').trim(),
+          lokasi_pit: String(unit.lokasiPit || '').trim(),
+          hm_terakhir: parseFloat(unit.hmTerakhir) || 0
+        };
+        var res = await client.from('master_unit').upsert(row);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    addMasterMechanic: async function (m) {
+      var client = getSupabaseClient();
+      try {
+        var row = {
+          nama: String(m.nama || '').trim().toUpperCase(),
+          nrp: String(m.nrp || '').trim(),
+          shift: String(m.shift || 'Siang').trim(),
+          keahlian: String(m.keahlian || 'AUTO ELECTRICIAN').trim()
+        };
+        var res = await client.from('master_mechanic').upsert(row);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    addMasterLocation: async function (l) {
+      var client = getSupabaseClient();
+      try {
+        var row = {
+          nama_lokasi: String(l.namaLokasi || '').trim().toUpperCase(),
+          tipe_area: String(l.tipeArea || '').trim(),
+          keterangan: String(l.keterangan || '').trim()
+        };
+        var res = await client.from('master_location').upsert(row);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    addMasterPart: async function (p) {
+      var client = getSupabaseClient();
+      try {
+        var row = {
+          part_number: String(p.partNumber || '').trim().toUpperCase(),
+          nama_part: String(p.namaPart || '').trim().toUpperCase(),
+          kategori: String(p.kategori || '').trim(),
+          merk: String(p.merk || '').trim(),
+          satuan: String(p.satuan || 'PCS').trim(),
+          unit_model: String(p.unitModel || '').trim()
+        };
+        var res = await client.from('master_part').upsert(row);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    addMasterBattery: async function (b) {
+      var client = getSupabaseClient();
+      try {
+        var row = {
+          kode_baterai: String(b.kodeBaterai || '').trim().toUpperCase(),
+          merk: String(b.merk || '').trim(),
+          kapasitas: String(b.kapasitas || '').trim(),
+          voltase: String(b.voltase || '12V').trim(),
+          tipe_aki: String(b.tipeAki || 'MAINTENANCE FREE').trim(),
+          aplikasi: String(b.aplikasi || 'HEAVY EQUIPMENT').trim()
+        };
+        var res = await client.from('master_battery').upsert(row);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    addMasterCategory: async function (catName) {
+      var client = getSupabaseClient();
+      try {
+        var row = { kategori: String(catName || '').trim().toUpperCase() };
+        var res = await client.from('master_category').upsert(row);
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    },
+
+    deleteMasterCategory: async function (catName) {
+      var client = getSupabaseClient();
+      try {
+        var res = await client.from('master_category').delete().eq('kategori', String(catName || '').trim().toUpperCase());
+        if (res.error) throw res.error;
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+  };
+
+  // Expose global SupabaseBackend
+  window.SupabaseBackend = SupabaseBackend;
+
+  // --------------------------------------------------------------------------
+  // UNIVERSAL PROXY BRIDGE: MENGGANTIKAN google.script.run SECARA TRANSPARAN
+  // --------------------------------------------------------------------------
+  function createMethodInvoker(methodName, successHandler, failureHandler) {
+    return function () {
+      var args = Array.prototype.slice.call(arguments);
+      if (typeof SupabaseBackend[methodName] === 'function') {
+        SupabaseBackend[methodName].apply(SupabaseBackend, args)
+          .then(function (result) {
+            if (typeof successHandler === 'function') {
+              successHandler(result);
+            }
+          })
+          .catch(function (error) {
+            console.error('Supabase Bridge Error (' + methodName + '):', error);
+            if (typeof failureHandler === 'function') {
+              failureHandler(error);
+            }
+          });
+      } else {
+        console.warn('Metode ' + methodName + ' tidak ditemukan di SupabaseBackend.');
+        if (typeof failureHandler === 'function') {
+          failureHandler(new Error('Method ' + methodName + ' not implemented.'));
+        }
+      }
+    };
+  }
+
+  function createCallerObject(successHandler, failureHandler) {
+    var caller = {};
+    for (var key in SupabaseBackend) {
+      if (typeof SupabaseBackend[key] === 'function') {
+        caller[key] = createMethodInvoker(key, successHandler, failureHandler);
+      }
+    }
+    return caller;
+  }
+
+  var SupabaseRunBridge = {
+    withSuccessHandler: function (successCb) {
+      var obj = createCallerObject(successCb, null);
+      obj.withFailureHandler = function (failureCb) {
+        return createCallerObject(successCb, failureCb);
+      };
+      return obj;
+    },
+    withFailureHandler: function (failureCb) {
+      var obj = createCallerObject(null, failureCb);
+      obj.withSuccessHandler = function (successCb) {
+        return createCallerObject(successCb, failureCb);
+      };
+      return obj;
+    }
+  };
+
+  for (var fnKey in SupabaseBackend) {
+    if (typeof SupabaseBackend[fnKey] === 'function') {
+      SupabaseRunBridge[fnKey] = createMethodInvoker(fnKey, null, null);
+    }
+  }
+
+  // Terapkan Bridge ke window.google.script.run
+  window.google = window.google || {};
+  window.google.script = window.google.script || {};
+  window.google.script.run = SupabaseRunBridge;
+  window.isSupabaseConnected = true;
+
+  console.log('⚡ Supabase Adapter & Bridge Aktif (PT SMA Konawe - AE Report)');
+})();
+</script>

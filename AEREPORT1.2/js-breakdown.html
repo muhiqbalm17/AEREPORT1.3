@@ -1,0 +1,706 @@
+<script>
+  /**
+   * ============================================================================
+   * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+   * File: js-breakdown.html (Tab Analisa Kerusakan, RCFA, Rincian FAR, & Cetak PDF)
+   * ============================================================================
+   */
+
+  function switchBreakdownSubTab(subTabId) {
+    var btnInput = document.getElementById('subnav-brk-btn-input');
+    var btnLog = document.getElementById('subnav-brk-btn-log');
+    var panelInput = document.getElementById('breakdown-subtab-input');
+    var panelLog = document.getElementById('breakdown-subtab-log');
+
+    var isInput = (subTabId === 'input');
+    var isLog = (subTabId === 'log');
+
+    if (btnInput) {
+      if (isInput) btnInput.classList.add('active');
+      else btnInput.classList.remove('active');
+    }
+    if (btnLog) {
+      if (isLog) btnLog.classList.add('active');
+      else btnLog.classList.remove('active');
+    }
+
+    if (panelInput) {
+      panelInput.style.display = isInput ? 'block' : 'none';
+      panelInput.classList.toggle('active', isInput);
+    }
+    if (panelLog) {
+      panelLog.style.display = isLog ? 'block' : 'none';
+      panelLog.classList.toggle('active', isLog);
+    }
+
+    if (isLog) {
+      try {
+        loadBreakdownLogs();
+      } catch (err) {
+        console.error('Error saat memuat log FAR:', err);
+      }
+    }
+  }
+  window.switchBreakdownSubTab = switchBreakdownSubTab;
+
+  function handleBreakdownPartSelect(el) {
+    if (!el) return;
+    var val = el.value.trim().toUpperCase();
+    if (!val) return;
+
+    var matched = (globalParts || []).find(function (p) {
+      var pName = (p.namaPart || '').toUpperCase();
+      var pNum = (p.partNumber || '').toUpperCase();
+      return pName === val || pNum === val || val.indexOf(pNum) !== -1 || (pName && val.indexOf(pName) !== -1);
+    });
+
+    var inpPn = document.getElementById('brkPartNumber');
+    if (matched) {
+      if (inpPn) inpPn.value = matched.partNumber || '';
+      if (val === matched.partNumber.toUpperCase() && matched.namaPart) {
+        el.value = matched.namaPart;
+      }
+    }
+  }
+
+  function handleBreakdownSubmit(e) {
+    e.preventDefault();
+    var inpKomp = document.getElementById('brkKomponen');
+    var inpPn = document.getElementById('brkPartNumber');
+
+    var payload = {
+      noUnit: document.getElementById('brkNoUnit').value,
+      komponenGagal: inpKomp ? inpKomp.value.trim() : '',
+      partNumber: inpPn ? inpPn.value.trim().toUpperCase() : '',
+      namaPart: inpKomp ? inpKomp.value.trim() : '',
+      statusRepair: document.getElementById('brkStatus').value,
+      tanggal: document.getElementById('brkTanggal') ? document.getElementById('brkTanggal').value : new Date().toISOString().slice(0, 10),
+      hmUnit: document.getElementById('brkHM') ? document.getElementById('brkHM').value : '',
+      downtimeTotal: '0',
+      rootCause: document.getElementById('brkRootCause').value.trim(),
+      actionTaken: document.getElementById('brkAction').value.trim(),
+      preventionPlan: document.getElementById('brkPrevention').value.trim(),
+      driveFolderId: localStorage.getItem('AE_DRIVE_FOLDER_ID') || '',
+      imagesBase64: (typeof getMultiPhotosBase64 === 'function') ? getMultiPhotosBase64('brk') : (multiPhotosState.brk || []),
+      captions: (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('brk') : []
+    };
+
+    var currentPhotos = (payload.imagesBase64 && payload.imagesBase64.length > 0) ? payload.imagesBase64.slice() : [];
+    var currentCaptions = (payload.captions && payload.captions.length > 0) ? payload.captions.slice() : ((typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('brk') : []);
+    var optimisticBreakdown = {
+      tanggal: payload.tanggal,
+      noUnit: payload.noUnit,
+      hmUnit: payload.hmUnit,
+      partKomponen: payload.komponenGagal,
+      komponenGagal: payload.komponenGagal,
+      partNumber: payload.partNumber,
+      namaPart: payload.namaPart,
+      statusRepair: payload.statusRepair || 'REPLACE',
+      rootCause: payload.rootCause,
+      actionTaken: payload.actionTaken,
+      preventionPlan: payload.preventionPlan,
+      downtimeTotal: payload.downtimeTotal || '0',
+      urlFoto: currentPhotos.join(', '),
+      photosList: currentPhotos,
+      photoCaptions: currentCaptions
+    };
+    if (typeof savePhotoCaptionsMapping === 'function') {
+      savePhotoCaptionsMapping(payload.noUnit + '_' + payload.tanggal, currentCaptions);
+    }
+    if (!globalBreakdownLogs) globalBreakdownLogs = [];
+    globalBreakdownLogs.unshift(optimisticBreakdown);
+
+    filterBreakdownLogCards();
+    loadDashboardKPI();
+
+    showToast('Menyimpan analisa breakdown & mengunggah ' + (payload.imagesBase64.length) + ' foto...', 'info');
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            showToast('Analisa breakdown berhasil disimpan!', 'success');
+            if (res.idFar && typeof savePhotoCaptionsMapping === 'function') {
+              savePhotoCaptionsMapping(res.idFar, currentCaptions);
+              savePhotoCaptionsMapping(String(res.idFar).toUpperCase(), currentCaptions);
+            }
+            document.getElementById('breakdownForm').reset();
+            resetMultiPhotos('brk');
+            loadBreakdownLogs();
+            loadDashboardKPI();
+
+            if (isRedirectedFromReportToBreakdown) {
+              setTimeout(function () {
+                backToWorkReportTab();
+                showToast('Analisa breakdown sukses tersimpan! Silakan lengkapi dan simpan Report Pekerjaan.', 'success');
+              }, 700);
+            }
+          } else {
+            showToast('Gagal: ' + (res ? res.error : 'Error'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          showToast('Error: ' + err.message, 'error');
+        })
+        .submitBreakdownAnalysis(payload);
+    } else {
+      showToast('Analisa disimpan (Offline)', 'success');
+      document.getElementById('breakdownForm').reset();
+      resetMultiPhotos('brk');
+
+      if (isRedirectedFromReportToBreakdown) {
+        setTimeout(function () {
+          backToWorkReportTab();
+          showToast('Analisa breakdown tersimpan (Offline). Melanjutkan Report Pekerjaan...', 'success');
+        }, 700);
+      }
+    }
+  }
+
+  function loadBreakdownLogs(forceRefresh) {
+    var container = document.getElementById('breakdownTableBody') || document.getElementById('breakdownCardsContainer');
+
+    // Cek in-memory cache jika tidak dipaksa refresh
+    if (!forceRefresh && typeof appDataCache !== 'undefined' && appDataCache.breakdown && appDataCache.breakdown.data) {
+      globalBreakdownLogs = appDataCache.breakdown.data;
+      filterBreakdownLogCards();
+      return;
+    }
+
+    if (container && (!globalBreakdownLogs || globalBreakdownLogs.length === 0)) {
+      container.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">Memuat rincian dokumen FAR...</td></tr>';
+    }
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            globalBreakdownLogs = (typeof sortListByDateDescending === 'function')
+              ? sortListByDateDescending(res.logs || [], 'tanggal')
+              : (res.logs || []);
+
+            if (typeof appDataCache !== 'undefined') {
+              appDataCache.breakdown = {
+                data: globalBreakdownLogs,
+                lastFetched: Date.now()
+              };
+            }
+
+            filterBreakdownLogCards();
+            loadDashboardKPI();
+          } else {
+            if (container) container.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 24px;">Gagal memuat log FAR: ' + (res ? res.error : 'Error') + '</td></tr>';
+          }
+        })
+        .withFailureHandler(function (err) {
+          if (container) container.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 24px;">Error: ' + err.message + '</td></tr>';
+        })
+        .getBreakdownLogs();
+    } else {
+      filterBreakdownLogCards();
+    }
+  }
+
+  function filterBreakdownLogCards() {
+    var keyword = document.getElementById('brkLogSearch') ? document.getElementById('brkLogSearch').value.toLowerCase().trim() : '';
+
+    var filtered = (globalBreakdownLogs || []).filter(function (item) {
+      if (!keyword) return true;
+      var u = (item.noUnit || '').toLowerCase();
+      var tgl = (item.tanggal ? formatDateDDMMYYYY(item.tanggal) : '').toLowerCase();
+      var tglRaw = (item.tanggal || '').toLowerCase();
+      var part = (item.namaPart || item.partKomponen || item.komponenGagal || '').toLowerCase();
+      var pn = (item.partNumber || '').toLowerCase();
+      var rc = (item.rootCause || '').toLowerCase();
+      var act = (item.actionTaken || '').toLowerCase();
+      var prev = (item.preventionPlan || '').toLowerCase();
+      var st = (item.statusRepair || '').toLowerCase();
+
+      return u.indexOf(keyword) !== -1 ||
+        tgl.indexOf(keyword) !== -1 ||
+        tglRaw.indexOf(keyword) !== -1 ||
+        part.indexOf(keyword) !== -1 ||
+        pn.indexOf(keyword) !== -1 ||
+        rc.indexOf(keyword) !== -1 ||
+        act.indexOf(keyword) !== -1 ||
+        prev.indexOf(keyword) !== -1 ||
+        st.indexOf(keyword) !== -1;
+    });
+
+    if (typeof sortListByDateDescending === 'function') {
+      filtered = sortListByDateDescending(filtered, 'tanggal');
+    }
+
+    renderBreakdownLogCards(filtered);
+  }
+
+  function renderBreakdownLogCards(list) {
+    var tbody = document.getElementById('breakdownTableBody') || document.getElementById('breakdownCardsContainer');
+    if (!tbody) return;
+
+    if (!list || list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 12.5px;">Tidak ada dokumen Failure Analysis Report (FAR) yang sesuai kriteria pencarian.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    list.forEach(function (item) {
+      var origIdx = (globalBreakdownLogs || []).indexOf(item);
+      if (origIdx === -1) origIdx = 0;
+
+      var safeDate = escapeHtml(item.tanggal ? formatDateDDMMYYYY(item.tanggal) : '-');
+      var safeUnit = escapeHtml(item.noUnit || '-');
+      var safePart = escapeHtml(item.namaPart || item.partKomponen || item.komponenGagal || '-');
+      var safePN = item.partNumber ? (' <span style="font-family: monospace; font-size: 10px; background: var(--input-bg); border: 1px solid var(--border-color); padding: 1px 5px; border-radius: 3px; color: var(--text-dim);">' + escapeHtml(item.partNumber) + '</span>') : '';
+      var safeRC = escapeHtml(item.rootCause || '-');
+
+      html += '<tr style="border-bottom: 1px solid var(--border-subtle);">' +
+        '<td style="color: var(--text-main); font-size: 12.5px; font-weight: 700; white-space: nowrap;">' + safeDate + '</td>' +
+        '<td><strong style="color: var(--text-main); font-size: 13px;">' + safeUnit + '</strong></td>' +
+        '<td><strong style="color: var(--accent-orange); font-size: 12px;">' + safePart + '</strong>' + safePN + '</td>' +
+        '<td style="max-width: 320px; width: 320px; min-width: 200px; overflow: hidden; word-break: break-word; overflow-wrap: anywhere;" title="' + safeRC + '">' +
+        '<div style="color: var(--text-main); font-size: 11.5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; word-break: break-word; overflow-wrap: anywhere; max-width: 100%;">' + safeRC + '</div>' +
+        '</td>' +
+        '<td style="text-align: center;">' +
+        '<button type="button" class="btn-secondary" style="padding: 4px 10px; font-size: 11px; font-weight: 700;" onclick="openDetailFarModal(' + origIdx + ')">Detail</button>' +
+        '</td>' +
+        '</tr>';
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  /**
+   * Helper pemformat teks uraian teknis agar enter dan poin penomoran (1. 2. 3. dst) tersusun rapi menurun ke bawah
+   */
+  function formatMultilineBreakdownText(val, defaultText) {
+    if (!val) return defaultText || '-';
+    var text = String(val).trim();
+    // Jika teks sudah memiliki jeda baris alami (Enter), pertahankan
+    if (text.indexOf('\n') !== -1) {
+      return text;
+    }
+    // Jika tidak ada newline tetapi berisi penomoran tersambung (contoh: "1. A 2. B 3. C" atau "1) A 2) B"):
+    // Otomatis pecah menjadi baris baru per nomor agar tersusun menurun ke bawah
+    return text.replace(/(\s+|^)(\d+[\.\)]\s*)/g, function(match, space, prefix, offset) {
+      return (offset > 0 ? '\n' : '') + prefix;
+    });
+  }
+
+  function openDetailFarModal(idx) {
+    var item = (globalBreakdownLogs || [])[idx];
+    if (!item) return;
+
+    var unitObj = (globalUnits || []).find(function (u) { return u.noUnit === item.noUnit; }) || {};
+    var safeUnit = escapeHtml(item.noUnit || '-');
+    var safeModel = escapeHtml(unitObj.model || item.modelUnit || '-');
+    var safeDate = escapeHtml(item.tanggal ? formatDateDDMMYYYY(item.tanggal) : '-');
+    var safeHM = item.hmUnit ? (escapeHtml(item.hmUnit) + ' HM') : '-';
+    var safePart = escapeHtml(item.namaPart || item.partKomponen || item.komponenGagal || '-');
+    var safePN = escapeHtml(item.partNumber || '-');
+    var safeStatus = escapeHtml(item.statusRepair || 'REPLACE');
+
+    var docNum = 'SMA-FAR-' + (item.tanggal ? item.tanggal.replace(/[^0-9]/g, '').slice(0, 6) : '2026') + '-' + ('000' + (idx + 1)).slice(-3);
+
+    document.getElementById('viewFarModalSubtitle').textContent = 'ID: ' + docNum + ' · ' + safeDate;
+    document.getElementById('viewFarModalUnit').textContent = safeUnit;
+    document.getElementById('viewFarModalModel').textContent = safeModel;
+    document.getElementById('viewFarModalTanggal').textContent = safeDate;
+    document.getElementById('viewFarModalHM').textContent = safeHM;
+    document.getElementById('viewFarModalPart').textContent = safePart;
+    document.getElementById('viewFarModalPN').textContent = safePN;
+
+    var elStatus = document.getElementById('viewFarModalStatus');
+    if (elStatus) {
+      elStatus.textContent = safeStatus;
+      elStatus.className = 'status-select-rfu';
+      if (safeStatus === 'REPLACE' || safeStatus === 'BAD') elStatus.className = 'status-select-waiting';
+      else if (safeStatus === 'WAITING PART') elStatus.className = 'status-select-continue';
+    }
+
+    document.getElementById('viewFarModalRootCause').textContent = formatMultilineBreakdownText(item.rootCause, '-');
+    document.getElementById('viewFarModalActionTaken').textContent = formatMultilineBreakdownText(item.actionTaken, '-');
+    document.getElementById('viewFarModalPreventionPlan').textContent = formatMultilineBreakdownText(item.preventionPlan, '-');
+
+    var photoBox = document.getElementById('viewFarModalPhotoContainer');
+    if (photoBox) {
+      photoBox.innerHTML = '';
+      var photoUrls = [];
+      if (item.photosList && Array.isArray(item.photosList) && item.photosList.length > 0) {
+        photoUrls = item.photosList;
+      } else if (item.urlFoto) {
+        var rawEntries = item.urlFoto.split(/(?:,\s*|\r?\n)+/).map(function (e) { return e.trim(); }).filter(Boolean);
+        rawEntries.forEach(function (entry) {
+          var clean = entry.indexOf('|') !== -1 ? entry.split('|')[0].trim() : entry.split(/\s+/)[0].trim();
+          if (clean.length > 10 && (clean.indexOf('http') === 0 || clean.indexOf('data:image') === 0)) {
+            photoUrls.push(clean);
+          }
+        });
+      }
+
+      var uniquePhotos = [];
+      photoUrls.forEach(function (u) {
+        if (u && uniquePhotos.indexOf(u) === -1) uniquePhotos.push(u);
+      });
+
+      if (uniquePhotos.length > 0) {
+        uniquePhotos.forEach(function (u, pIdx) {
+          var directThumb = getDirectDriveImageUrl(u);
+          var cap = (item.photoCaptions && item.photoCaptions[pIdx]) || ((typeof getPhotoCaption === 'function') ? getPhotoCaption(u, pIdx, item) : '');
+          photoBox.innerHTML += '<div style="display: flex; flex-direction: column; align-items: stretch; gap: 4px; border: 1.5px solid var(--border-color); padding: 5px; border-radius: 6px; background: var(--card-bg-subtle); width: 125px; box-sizing: border-box;">' +
+            '<div style="cursor: pointer; position: relative; width: 100%; display: flex; justify-content: center;" onclick="openImageModal(\'' + directThumb + '\')" title="Klik untuk memperbesar gambar">' +
+            '<img src="' + directThumb + '" referrerpolicy="no-referrer" style="height: 80px; width: 100%; border-radius: 3px; object-fit: cover; display: block;" onerror="this.onerror=null; this.src=\'https://placehold.co/100x100/0a1120/94a3b8?text=Foto+FAR\';">' +
+            '</div>' +
+            '<input type="text" class="far-detail-caption-input" value="' + escapeHtml(cap) + '" placeholder="Keterangan foto #' + (pIdx + 1) + '..." onchange="updateFarItemCaption(' + idx + ', ' + pIdx + ', this.value)" style="font-size: 9px; font-weight: 700; color: var(--text-main); text-align: center; width: 100%; border: 1px solid var(--border-color); border-radius: 3px; background: var(--input-bg); padding: 3px 4px; box-sizing: border-box;" title="Keterangan foto asli (dapat diedit langsung)">' +
+            '</div>';
+        });
+      } else {
+        photoBox.innerHTML = '<span style="font-size: 11.5px; color: var(--text-dim); font-style: italic;">Tidak ada foto bukti terlampir.</span>';
+      }
+    }
+
+    var btnPrint = document.getElementById('viewFarModalBtnPrintPdf');
+    if (btnPrint) {
+      btnPrint.onclick = function () {
+        downloadFarPDF(idx);
+      };
+    }
+
+    var btnDelete = document.getElementById('viewFarModalBtnDelete');
+    if (btnDelete) {
+      btnDelete.onclick = function () {
+        closeDetailFarModal();
+        promptDeleteFar(idx);
+      };
+    }
+
+    var modal = document.getElementById('viewFarModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function updateFarItemCaption(itemIdx, photoIdx, newCaption) {
+    if (!globalBreakdownLogs || !globalBreakdownLogs[itemIdx]) return;
+    var item = globalBreakdownLogs[itemIdx];
+    if (!item.photoCaptions || !Array.isArray(item.photoCaptions)) {
+      item.photoCaptions = [];
+    }
+    item.photoCaptions[photoIdx] = (newCaption || '').trim();
+
+    var idKey = item.idFar || item.idFAR || (item.noUnit + '_' + item.tanggal);
+    if (typeof savePhotoCaptionsMapping === 'function') {
+      savePhotoCaptionsMapping(idKey, item.photoCaptions);
+      if (item.idFar) savePhotoCaptionsMapping(String(item.idFar).toUpperCase(), item.photoCaptions);
+      if (item.noUnit && item.tanggal) savePhotoCaptionsMapping(item.noUnit + '_' + item.tanggal, item.photoCaptions);
+    }
+
+    if (item.idFar && typeof google !== 'undefined' && google.script && google.script.run && google.script.run.updateBreakdownPhotoCaptions) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            showToast('Keterangan foto asli berhasil disimpan!', 'success');
+          }
+        })
+        .updateBreakdownPhotoCaptions(item.idFar, item.photoCaptions);
+    } else {
+      showToast('Keterangan foto asli diperbarui (Lokal)', 'success');
+    }
+  }
+  window.updateFarItemCaption = updateFarItemCaption;
+
+  function closeDetailFarModal() {
+    var modal = document.getElementById('viewFarModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function promptDeleteFar(idx) {
+    var item = (globalBreakdownLogs || [])[idx];
+    if (!item) return;
+
+    var inp = document.getElementById('deleteTargetFarIdx');
+    if (inp) inp.value = idx;
+
+    var txt = document.getElementById('deleteFarConfirmText');
+    if (txt) {
+      var safeUnit = escapeHtml(item.noUnit || '-');
+      var safePart = escapeHtml(item.namaPart || item.partKomponen || item.partNumber || '-');
+      txt.innerHTML = 'Apakah Anda yakin ingin menghapus dokumen FAR untuk unit <strong>' + safeUnit + '</strong> (Komponen: ' + safePart + ') secara permanen? Data yang dihapus tidak dapat dipulihkan.';
+    }
+
+    var modal = document.getElementById('deleteFarConfirmModal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closeDeleteFarConfirmModal() {
+    var modal = document.getElementById('deleteFarConfirmModal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  function executeDeleteFar() {
+    var inp = document.getElementById('deleteTargetFarIdx');
+    var idx = inp ? parseInt(inp.value, 10) : -1;
+    if (idx < 0 || !globalBreakdownLogs || idx >= globalBreakdownLogs.length) {
+      closeDeleteFarConfirmModal();
+      return;
+    }
+
+    var targetItem = globalBreakdownLogs[idx];
+    globalBreakdownLogs.splice(idx, 1);
+    closeDeleteFarConfirmModal();
+    filterBreakdownLogCards();
+    loadDashboardKPI();
+    showToast('Menghapus dokumen FAR dari spreadsheet...', 'info');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (res && res.success) {
+            showToast('Dokumen FAR berhasil dihapus permanen.', 'success');
+          } else {
+            showToast('Gagal menghapus FAR: ' + (res ? res.error : 'Error'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          showToast('Koneksi gagal: ' + err.message, 'error');
+        })
+        .deleteBreakdownLog(targetItem);
+    } else {
+      showToast('Dokumen FAR dihapus (Mode Offline).', 'success');
+    }
+  }
+
+  /**
+   * FITUR CETAK DOKUMEN FAR RESMI (A4 ULTRA-HD 400 DPI)
+   * Dilengkapi penguncian koordinat absolut origin (0, 0) anti-shift di Desktop & Smartphone
+   */
+  function downloadFarPDF(idx) {
+    var item = (globalBreakdownLogs || [])[idx];
+    if (!item) {
+      showToast('Data FAR tidak ditemukan!', 'error');
+      return;
+    }
+
+    var btn = document.getElementById('viewFarModalBtnPrintPdf');
+    var origBtnHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<svg class="spin-icon-dash" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Mencetak...';
+    }
+
+    function restoreBtnUI(isSuccess) {
+      if (!btn) return;
+      if (isSuccess) {
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Selesai';
+        setTimeout(function () {
+          btn.disabled = false;
+          btn.innerHTML = origBtnHtml;
+        }, 600);
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = origBtnHtml;
+      }
+    }
+
+    if (typeof showPdfRenderOverlay === 'function') {
+      showPdfRenderOverlay('Menyiapkan Dokumen FAR...', 'Sedang merender laporan Failure Analysis Report resolusi tinggi...');
+    }
+
+    if (typeof syncCompanyLogoDisplay === 'function') {
+      syncCompanyLogoDisplay();
+    }
+
+    var unitObj = (globalUnits || []).find(function (u) { return u.noUnit === item.noUnit; }) || {};
+    var safeUnit = item.noUnit || '-';
+    var safeModel = unitObj.model || item.modelUnit || '-';
+    var safeHM = item.hmUnit ? (item.hmUnit + ' HM') : '-';
+    var safeDate = item.tanggal ? (String(item.tanggal).length >= 10 ? String(item.tanggal).slice(0, 10) : item.tanggal) : '-';
+    var safePart = item.namaPart || item.partKomponen || item.komponenGagal || '-';
+    var safePN = item.partNumber || '-';
+    var safeStatus = item.statusRepair || 'REPLACE';
+
+    // Format Tanggal Cetak Indonesia Resmi: "18 Oktober 2026"
+    var monthsIndo = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    var dNow = new Date();
+    var printDateStr = dNow.getDate() + ' ' + monthsIndo[dNow.getMonth()] + ' ' + dNow.getFullYear();
+
+    var docNum = 'SMA-FAR-' + (item.tanggal ? item.tanggal.replace(/[^0-9]/g, '').slice(0, 6) : '202610') + '-' + ('000' + (idx + 1)).slice(-3);
+
+    document.getElementById('farPdfDocNumber').textContent = docNum;
+    document.getElementById('farPdfPrintDate').textContent = printDateStr;
+    document.getElementById('farPdfNoUnit').textContent = safeUnit;
+    document.getElementById('farPdfModelUnit').textContent = safeModel;
+    document.getElementById('farPdfHMUnit').textContent = safeHM;
+    document.getElementById('farPdfTanggal').textContent = safeDate;
+    document.getElementById('farPdfNamaPart').textContent = safePart;
+    document.getElementById('farPdfPartNumber').textContent = safePN;
+    document.getElementById('farPdfStatusRepair').textContent = safeStatus;
+
+    document.getElementById('farPdfRootCause').textContent = formatMultilineBreakdownText(item.rootCause, 'Tidak dicantumkan investigasi akar masalah.');
+    document.getElementById('farPdfActionTaken').textContent = formatMultilineBreakdownText(item.actionTaken, 'Tidak dicantumkan tindakan korektif.');
+    document.getElementById('farPdfPreventionPlan').textContent = formatMultilineBreakdownText(item.preventionPlan, 'Tidak dicantumkan rencana mitigasi pencegahan.');
+
+    var photosBox = document.getElementById('farPdfPhotosContainer');
+    if (photosBox) {
+      photosBox.innerHTML = '';
+      var photoUrls = [];
+      if (item.photosList && Array.isArray(item.photosList) && item.photosList.length > 0) {
+        photoUrls = item.photosList;
+      } else if (item.urlFoto) {
+        var rawEntries = item.urlFoto.split(/(?:,\s*|\r?\n)+/).map(function (e) { return e.trim(); }).filter(Boolean);
+        rawEntries.forEach(function (entry) {
+          var clean = entry.indexOf('|') !== -1 ? entry.split('|')[0].trim() : entry.split(/\s+/)[0].trim();
+          if (clean.length > 10 && (clean.indexOf('http') === 0 || clean.indexOf('data:image') === 0)) {
+            photoUrls.push(clean);
+          }
+        });
+      }
+
+      if (photoUrls.length > 0) {
+        var cardStyle = 'width: calc(50% - 5px);';
+        var imgHeight = '185px';
+        if (photoUrls.length === 1) {
+          cardStyle = 'width: 420px; max-width: 100%; margin: 0 auto;';
+          imgHeight = '210px';
+        } else if (photoUrls.length === 2) {
+          cardStyle = 'width: calc(50% - 5px);';
+          imgHeight = '190px';
+        } else if (photoUrls.length >= 3) {
+          cardStyle = 'width: calc(33.333% - 6px);';
+          imgHeight = '180px';
+        }
+        photoUrls.forEach(function (u, pIdx) {
+          var directImg = getDirectDriveImageUrl(u);
+          var captionText = (item.photoCaptions && item.photoCaptions[pIdx]) || ((typeof getPhotoCaption === 'function') ? getPhotoCaption(u, pIdx, item) : '');
+          if (!captionText) {
+            captionText = 'Foto Bukti #' + (pIdx + 1);
+          }
+          photosBox.innerHTML += '<div style="display: flex; flex-direction: column; align-items: center; justify-content: space-between; border: 1.5px solid #cbd5e1; padding: 4px; border-radius: 4px; background: #ffffff; ' + cardStyle + ' box-sizing: border-box;">' +
+            '<img src="' + directImg + '" referrerpolicy="no-referrer" style="width: 100%; height: ' + imgHeight + '; object-fit: contain; border-radius: 3px; background: #f8fafc; -webkit-font-smoothing: antialiased; image-rendering: -webkit-optimize-contrast;" onerror="this.onerror=null; this.src=\'https://placehold.co/400x250/e2e8f0/475569?text=Bukti+Kerusakan\';">' +
+            '<div style="font-size: 8.5px; font-weight: 700; color: #1e293b; text-align: center; word-break: break-word; line-height: 1.25; margin-top: 5px; max-width: 100%; text-transform: uppercase;">' + escapeHtml(captionText) + '</div>' +
+            '</div>';
+        });
+      } else {
+        photosBox.innerHTML = '<div style="font-size: 8.5px; color: #94a3b8; font-style: italic;">Tidak ada foto bukti kerusakan terlampir pada dokumen ini.</div>';
+      }
+    }
+
+    var template = document.getElementById('farDocumentPrintTemplate');
+    if (!template) {
+      if (typeof hidePdfRenderOverlay === 'function') hidePdfRenderOverlay();
+      restoreBtnUI(false);
+      return;
+    }
+
+    // Isolated In-Flow Host: Rendisi kanvas stabil, 100% presisi A4, tertutup rapi oleh rendering overlay
+    var host = document.createElement('div');
+    host.id = 'farPdfCaptureHost';
+    host.style.cssText = 'position: fixed; left: 0; top: 0; width: 720px; min-width: 720px; max-width: 720px; height: auto; z-index: 1000; background: #ffffff; margin: 0; padding: 0; box-sizing: border-box; overflow: visible; pointer-events: none;';
+
+    var clone = template.cloneNode(true);
+    clone.id = 'farActivePrintTargetNode';
+    clone.classList.add('pdf-print-template-root');
+    clone.style.cssText = 'display: block !important; position: relative !important; width: 720px !important; min-width: 720px !important; max-width: 720px !important; margin: 0 !important; left: 0 !important; background: #ffffff !important; opacity: 1 !important; visibility: visible !important; box-sizing: border-box !important;';
+
+    host.appendChild(clone);
+    document.body.appendChild(host);
+
+    var isCleaned = false;
+    function cleanupHost() {
+      if (isCleaned) return;
+      isCleaned = true;
+      if (typeof hidePdfRenderOverlay === 'function') {
+        hidePdfRenderOverlay();
+      }
+      if (host && host.parentNode) {
+        host.parentNode.removeChild(host);
+      }
+    }
+
+    var safetyTimer = setTimeout(function () {
+      if (!isCleaned) {
+        cleanupHost();
+        restoreBtnUI(false);
+        showToast('Waktu proses cetak PDF FAR habis.', 'error');
+      }
+    }, 15000);
+
+    waitForImagesLoaded(clone, function () {
+      setTimeout(function () {
+        if (typeof window.scrollTo === 'function') {
+          window.scrollTo(0, 0);
+        }
+        var opt = {
+          margin: [8, 8, 8, 8],
+          filename: 'FAR_' + safeUnit + '_' + (safePN !== '-' ? safePN : 'COMP') + '_' + new Date().toISOString().slice(0, 10) + '.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 3,
+            dpi: 300,
+            letterRendering: true,
+            useCORS: true,
+            allowTaint: false,
+            scrollY: 0,
+            scrollX: 0,
+            x: 0,
+            y: 0,
+            windowWidth: 720,
+            backgroundColor: '#ffffff',
+            logging: false
+          },
+          pagebreak: {
+            mode: ['avoid-all', 'css', 'legacy']
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
+        };
+
+        try {
+          if (typeof html2pdf !== 'undefined') {
+            html2pdf().set(opt).from(clone).save().then(function () {
+              clearTimeout(safetyTimer);
+              cleanupHost();
+              restoreBtnUI(true);
+            }).catch(function (err) {
+              clearTimeout(safetyTimer);
+              cleanupHost();
+              restoreBtnUI(false);
+              showToast('Gagal mencetak PDF FAR: ' + err.message, 'error');
+            });
+          } else {
+            clearTimeout(safetyTimer);
+            cleanupHost();
+            restoreBtnUI(false);
+            showToast('Library html2pdf belum selesai dimuat.', 'error');
+          }
+        } catch (execErr) {
+          clearTimeout(safetyTimer);
+          cleanupHost();
+          restoreBtnUI(false);
+          showToast('Terjadi kendala saat memproses PDF: ' + execErr.message, 'error');
+        }
+      }, 150);
+    });
+  }
+
+  // Inisialisasi Event Listener Dual Binding untuk Tombol Subnav Breakdown FAR
+  function initBreakdownSubtabEventListeners() {
+    var btnInput = document.getElementById('subnav-brk-btn-input');
+    var btnLog = document.getElementById('subnav-brk-btn-log');
+
+    if (btnInput) {
+      btnInput.addEventListener('click', function (e) {
+        if (e) e.preventDefault();
+        switchBreakdownSubTab('input');
+      });
+    }
+    if (btnLog) {
+      btnLog.addEventListener('click', function (e) {
+        if (e) e.preventDefault();
+        switchBreakdownSubTab('log');
+      });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBreakdownSubtabEventListeners);
+  } else {
+    initBreakdownSubtabEventListeners();
+  }
+</script>

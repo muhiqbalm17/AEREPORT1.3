@@ -1,0 +1,1533 @@
+<script>
+  /**
+   * ============================================================================
+   * SISTEM REPORT PEKERJAAN AUTO ELECTRICIAN - PT. SAMUDERA MULIA ABADI (KONAWE)
+   * File: js-inspection.html (Tab Checklist Inspeksi Elektrikal & Khusus AC System)
+   * Versi: v3.0 (Sub-Tab Jadwal & Monitoring Prediktif, Klasifikasi Tipe Armada, & AC Module)
+   * ============================================================================
+   */
+
+  var selectedInspectorsList = [];
+  var selectedACInspectorsList = [];
+  var currentInspectionUnitTypeFilter = 'ALL';
+  var currentInspectionSystemFilter = 'ALL';
+  var currentInspectionCardFilter = 'ALL';
+  var currentInspectionSearchQuery = '';
+  var globalInspectionScheduleData = [];
+
+  // ============================================================================
+  // 1. SUB-NAVIGASI & PENYELARASAN TAMPILAN
+  // ============================================================================
+
+  function switchInspectionSubTab(subTabId) {
+    var btnSchedule = document.getElementById('subnav-insp-btn-schedule');
+    var btnInput = document.getElementById('subnav-insp-btn-input');
+    var panelSchedule = document.getElementById('insp-subtab-schedule');
+    var panelInput = document.getElementById('insp-subtab-input');
+
+    if (btnSchedule) btnSchedule.classList.toggle('active', subTabId === 'schedule');
+    if (btnInput) btnInput.classList.toggle('active', subTabId === 'input');
+    if (panelSchedule) panelSchedule.classList.toggle('active', subTabId === 'schedule');
+    if (panelInput) panelInput.classList.toggle('active', subTabId === 'input');
+
+    if (subTabId === 'schedule') {
+      if (typeof renderNextInspectionScheduleTable === 'function') {
+        renderNextInspectionScheduleTable();
+      }
+    }
+  }
+  window.switchInspectionSubTab = switchInspectionSubTab;
+
+  function switchInspectionFormType(formType) {
+    var btnElec = document.getElementById('inspFormToggle-elec');
+    var btnAc = document.getElementById('inspFormToggle-ac');
+    var formElec = document.getElementById('insp-form-container-elec');
+    var formAc = document.getElementById('insp-form-container-ac');
+
+    if (btnElec) btnElec.classList.toggle('active', formType === 'elec');
+    if (btnAc) btnAc.classList.toggle('active', formType === 'ac');
+
+    if (formElec) formElec.style.display = (formType === 'elec') ? 'block' : 'none';
+    if (formAc) formAc.style.display = (formType === 'ac') ? 'block' : 'none';
+  }
+  window.switchInspectionFormType = switchInspectionFormType;
+
+  // ============================================================================
+  // 2. DETEKSI TIPE UNIT MASTER DATA PADA INPUT FORMULIR
+  // ============================================================================
+
+  function handleInspUnitInputChange(val) {
+    var cleanVal = String(val || '').trim().toUpperCase();
+    var badgeEl = document.getElementById('inspUnitTypeBadge');
+    var hmInput = document.getElementById('inspHM');
+
+    if (!cleanVal) {
+      if (badgeEl) badgeEl.style.display = 'none';
+      return;
+    }
+
+    var foundUnit = (window.globalUnits || []).find(function (u) {
+      return String(u.noUnit || '').trim().toUpperCase() === cleanVal;
+    });
+
+    if (foundUnit) {
+      var tipe = (typeof getUnitClassification === 'function')
+        ? getUnitClassification(foundUnit)
+        : (foundUnit.tipe || foundUnit.tipeUnit || 'HAULER');
+      var model = foundUnit.model || '-';
+
+      if (badgeEl) {
+        badgeEl.textContent = 'TIPE: ' + tipe + ' (' + model + ')';
+        badgeEl.style.display = 'inline-block';
+      }
+
+      if (hmInput && (!hmInput.value || parseFloat(hmInput.value) <= 0)) {
+        var masterHM = parseFloat(foundUnit.hmTerakhir || foundUnit.HMTerakhir) || 0;
+        if (masterHM > 0) hmInput.value = masterHM.toFixed(1);
+      }
+    } else {
+      if (badgeEl) badgeEl.style.display = 'none';
+    }
+  }
+  window.handleInspUnitInputChange = handleInspUnitInputChange;
+
+  function handleInspAcUnitInputChange(val) {
+    var cleanVal = String(val || '').trim().toUpperCase();
+    var hmInput = document.getElementById('inspAcHM');
+    if (!cleanVal) return;
+
+    var foundUnit = (window.globalUnits || []).find(function (u) {
+      return String(u.noUnit || '').trim().toUpperCase() === cleanVal;
+    });
+
+    if (foundUnit && hmInput && (!hmInput.value || parseFloat(hmInput.value) <= 0)) {
+      var masterHM = parseFloat(foundUnit.hmTerakhir || foundUnit.HMTerakhir) || 0;
+      if (masterHM > 0) hmInput.value = masterHM.toFixed(1);
+    }
+  }
+  window.handleInspAcUnitInputChange = handleInspAcUnitInputChange;
+
+  // ============================================================================
+  // 3. MULTI-INSPEKTOR ELEKTRIKAL & KHUSUS AC
+  // ============================================================================
+
+  function handleInspectorInputKey(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addSelectedInspectorFromInput();
+    }
+  }
+
+  function handleInspectorInputDatalist(e) {
+    var val = e.target.value.trim();
+    if (!val) return;
+    var match = (globalMechanics || []).find(function (m) {
+      return (m.nama && m.nama.toUpperCase() === val.toUpperCase());
+    });
+    if (match) {
+      addInspectorTag(match.nama);
+      e.target.value = '';
+    }
+  }
+
+  function addSelectedInspectorFromInput() {
+    var inp = document.getElementById('inspInspektorInput');
+    if (!inp) return;
+    var val = inp.value.trim();
+    if (!val) return;
+
+    var parts = val.split(/[,;&/]+/);
+    parts.forEach(function (p) {
+      var name = p.trim().toUpperCase();
+      if (name) addInspectorTag(name);
+    });
+    inp.value = '';
+    inp.focus();
+  }
+
+  function addInspectorTag(name) {
+    var clean = name.trim().toUpperCase();
+    if (!clean) return;
+    if (selectedInspectorsList.indexOf(clean) !== -1) {
+      showToast('Inspektor ' + clean + ' sudah ada di daftar!', 'info');
+      return;
+    }
+    selectedInspectorsList.push(clean);
+    renderSelectedInspectorTags();
+  }
+
+  function removeSelectedInspectorTag(index) {
+    if (index >= 0 && index < selectedInspectorsList.length) {
+      selectedInspectorsList.splice(index, 1);
+      renderSelectedInspectorTags();
+    }
+  }
+
+  function clearSelectedInspectorTags() {
+    selectedInspectorsList = [];
+    renderSelectedInspectorTags();
+  }
+
+  function renderSelectedInspectorTags() {
+    var container = document.getElementById('inspInspektorTagsContainer');
+    var hiddenInp = document.getElementById('inspInspektor');
+    if (hiddenInp) hiddenInp.value = selectedInspectorsList.join(', ');
+    if (!container) return;
+    if (selectedInspectorsList.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+    var html = '';
+    selectedInspectorsList.forEach(function (name, idx) {
+      var safeName = escapeHtml(name);
+      html += '<span style="display: inline-flex; align-items: center; gap: 6px; background: var(--card-bg-subtle); border: 1px solid var(--accent-orange); color: var(--text-main); padding: 3px 8px; border-radius: var(--radius-sm); font-size: 11.5px; font-weight: 700;">' +
+        '<span>' + safeName + '</span>' +
+        '<span onclick="removeSelectedInspectorTag(' + idx + ')" style="cursor: pointer; color: #f87171; font-weight: 900; margin-left: 2px; font-size: 13px;" title="Hapus inspektor">&times;</span>' +
+        '</span>';
+    });
+    container.innerHTML = html;
+  }
+
+  // Multi-Inspector Khusus AC
+  function handleACInspectorInputKey(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addSelectedACInspectorFromInput();
+    }
+  }
+
+  function handleACInspectorInputDatalist(e) {
+    var val = e.target.value.trim();
+    if (!val) return;
+    var match = (globalMechanics || []).find(function (m) {
+      return (m.nama && m.nama.toUpperCase() === val.toUpperCase());
+    });
+    if (match) {
+      addACInspectorTag(match.nama);
+      e.target.value = '';
+    }
+  }
+
+  function addSelectedACInspectorFromInput() {
+    var inp = document.getElementById('inspAcInspektorInput');
+    if (!inp) return;
+    var val = inp.value.trim();
+    if (!val) return;
+
+    var parts = val.split(/[,;&/]+/);
+    parts.forEach(function (p) {
+      var name = p.trim().toUpperCase();
+      if (name) addACInspectorTag(name);
+    });
+    inp.value = '';
+    inp.focus();
+  }
+
+  function addACInspectorTag(name) {
+    var clean = name.trim().toUpperCase();
+    if (!clean) return;
+    if (selectedACInspectorsList.indexOf(clean) !== -1) {
+      showToast('Teknisi AC ' + clean + ' sudah ada di daftar!', 'info');
+      return;
+    }
+    selectedACInspectorsList.push(clean);
+    renderSelectedACInspectorTags();
+  }
+
+  function removeSelectedACInspectorTag(index) {
+    if (index >= 0 && index < selectedACInspectorsList.length) {
+      selectedACInspectorsList.splice(index, 1);
+      renderSelectedACInspectorTags();
+    }
+  }
+
+  function clearSelectedACInspectorTags() {
+    selectedACInspectorsList = [];
+    renderSelectedACInspectorTags();
+  }
+
+  function renderSelectedACInspectorTags() {
+    var container = document.getElementById('inspAcInspektorTagsContainer');
+    var hiddenInp = document.getElementById('inspAcInspektor');
+    if (hiddenInp) hiddenInp.value = selectedACInspectorsList.join(', ');
+    if (!container) return;
+    if (selectedACInspectorsList.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+    var html = '';
+    selectedACInspectorsList.forEach(function (name, idx) {
+      var safeName = escapeHtml(name);
+      html += '<span style="display: inline-flex; align-items: center; gap: 6px; background: var(--card-bg-subtle); border: 1px solid #10b981; color: var(--text-main); padding: 3px 8px; border-radius: var(--radius-sm); font-size: 11.5px; font-weight: 700;">' +
+        '<span>' + safeName + '</span>' +
+        '<span onclick="removeSelectedACInspectorTag(' + idx + ')" style="cursor: pointer; color: #f87171; font-weight: 900; margin-left: 2px; font-size: 13px;" title="Hapus teknisi AC">&times;</span>' +
+        '</span>';
+    });
+    container.innerHTML = html;
+  }
+
+  // ============================================================================
+  // 4. ENGINE PREDIKSI JADWAL INSPEKSI ELEKTRIKAL & AC BERDASARKAN HM
+  // ============================================================================
+
+  function renderNextInspectionScheduleTable() {
+    var tbody = document.getElementById('inspScheduleTableBody');
+    if (!tbody) return;
+
+    var latestUnitHM = {};
+
+    // 1. Konsolidasi HM dari Laporan Pekerjaan
+    (allFilteredReports || []).forEach(function (r) {
+      var unitCode = String(r.noUnit || '').trim().toUpperCase();
+      var hmVal = parseFloat(r.hmUnit);
+      if (!unitCode || isNaN(hmVal) || hmVal <= 0) return;
+
+      if (!latestUnitHM[unitCode] || hmVal > latestUnitHM[unitCode].hm) {
+        latestUnitHM[unitCode] = {
+          hm: hmVal,
+          tanggal: r.tanggal ? formatDateDDMMYYYY(r.tanggal) : '-',
+          model: r.modelUnit || ''
+        };
+      }
+    });
+
+    // 2. Konsolidasi HM dari Log PM
+    (window.globalPMLogs || []).forEach(function (pLog) {
+      var unitCode = String(pLog.noUnit || '').trim().toUpperCase();
+      var hmVal = parseFloat(pLog.hmUnit);
+      if (!unitCode || isNaN(hmVal) || hmVal <= 0) return;
+
+      if (!latestUnitHM[unitCode] || hmVal > latestUnitHM[unitCode].hm) {
+        latestUnitHM[unitCode] = {
+          hm: hmVal,
+          tanggal: (pLog.tanggal ? formatDateDDMMYYYY(pLog.tanggal) : '-') + ' (PM)',
+          model: latestUnitHM[unitCode] ? latestUnitHM[unitCode].model : ''
+        };
+      }
+    });
+
+    // 3. Konsolidasi HM dari Log Inspeksi
+    var allInspLogs = (window.globalInspectionLogs && window.globalInspectionLogs.length > 0)
+      ? window.globalInspectionLogs
+      : (window.appDataCache && window.appDataCache.inspection && window.appDataCache.inspection.data ? window.appDataCache.inspection.data : []);
+
+    allInspLogs.forEach(function (insp) {
+      var unitCode = String(insp.noUnit || '').trim().toUpperCase();
+      var hmVal = parseFloat(insp.hmUnit);
+      if (!unitCode || isNaN(hmVal) || hmVal <= 0) return;
+
+      if (!latestUnitHM[unitCode] || hmVal > latestUnitHM[unitCode].hm) {
+        latestUnitHM[unitCode] = {
+          hm: hmVal,
+          tanggal: (insp.tanggal ? formatDateDDMMYYYY(insp.tanggal) : '-') + ' (Inspeksi)',
+          model: latestUnitHM[unitCode] ? latestUnitHM[unitCode].model : ''
+        };
+      }
+    });
+
+    // 4. Konsolidasi HM dari Master Unit
+    (globalUnits || []).forEach(function (u) {
+      var unitCode = String(u.noUnit || '').trim().toUpperCase();
+      if (!unitCode) return;
+      var masterHM = parseFloat(u.hmTerakhir || u.HMTerakhir) || 0;
+
+      if (!latestUnitHM[unitCode]) {
+        latestUnitHM[unitCode] = {
+          hm: masterHM,
+          tanggal: masterHM > 0 ? 'Master Data' : '-',
+          model: u.model || '',
+          tipe: u.tipe || u.tipeUnit || ''
+        };
+      } else {
+        if (!latestUnitHM[unitCode].model && u.model) latestUnitHM[unitCode].model = u.model;
+        if (!latestUnitHM[unitCode].tipe && (u.tipe || u.tipeUnit)) latestUnitHM[unitCode].tipe = u.tipe || u.tipeUnit;
+        if (masterHM > latestUnitHM[unitCode].hm) {
+          latestUnitHM[unitCode].hm = masterHM;
+          latestUnitHM[unitCode].tanggal = 'Master Data';
+        }
+      }
+    });
+
+    var scheduleList = [];
+
+    Object.keys(latestUnitHM).forEach(function (code) {
+      var info = latestUnitHM[code];
+      var currentHM = info.hm;
+
+      // Temukan log inspeksi terakhir untuk unit ini (Elektrikal & AC)
+      var latestInsp = null;
+      var latestACInsp = null;
+      var latestAnyInsp = null;
+
+      allInspLogs.forEach(function (i) {
+        if (String(i.noUnit || '').trim().toUpperCase() === code) {
+          var iHM = parseFloat(i.hmUnit) || 0;
+          var iDate = i.tanggal || '';
+          var isAc = (i.tipeInspeksi === 'AC_SYSTEM' || String(i.catatan || '').indexOf('[INSPEKSI AC]') !== -1);
+          var entry = {
+            hm: iHM,
+            tanggal: iDate,
+            isAc: isAc,
+            status: i.statusUnit || (isAc ? 'NORMAL' : 'RFU'),
+            catatan: i.catatan || '',
+            inspektor: i.inspektor || ''
+          };
+
+          // Evaluasi inspeksi terbaru secara keseluruhan berdasarkan tanggal, lalu HM
+          if (!latestAnyInsp) {
+            latestAnyInsp = entry;
+          } else {
+            var dNew = new Date(iDate);
+            var dCurr = new Date(latestAnyInsp.tanggal);
+            if (!isNaN(dNew) && !isNaN(dCurr) && dNew > dCurr) {
+              latestAnyInsp = entry;
+            } else if (iHM > latestAnyInsp.hm && (!dCurr || dNew >= dCurr)) {
+              latestAnyInsp = entry;
+            }
+          }
+
+          if (isAc) {
+            if (!latestACInsp || iHM > latestACInsp.hm || (iDate && iDate > (latestACInsp.tanggal || ''))) {
+              latestACInsp = entry;
+            }
+          } else {
+            if (!latestInsp || iHM > latestInsp.hm || (iDate && iDate > (latestInsp.tanggal || ''))) {
+              latestInsp = entry;
+            }
+          }
+        }
+      });
+
+      // 1. Identifikasi Master Data & AC Capability Unit
+      var unitObj = (globalUnits || []).find(function (u) {
+        return String(u.noUnit || '').trim().toUpperCase() === code;
+      }) || { noUnit: code, model: info.model, tipe: info.tipe };
+
+      var unitClassification = (typeof getUnitClassification === 'function')
+        ? getUnitClassification(unitObj)
+        : (unitObj.tipe || 'HAULER');
+
+      // Evaluasi status AC Unit
+      var acBadge = '<span style="font-size:10px; color:#64748b; padding:2px 6px; border-radius:3px; background:rgba(148,163,184,0.1);">NON-AC / STANDAR</span>';
+      var hasAC = (unitClassification !== 'SUPPORT' || String(unitObj.model || '').toUpperCase().indexOf('TOWER') === -1);
+
+      if (hasAC) {
+        if (latestACInsp) {
+          var acSt = String(latestACInsp.status || '').toUpperCase();
+          if (acSt.indexOf('RFU') !== -1 || acSt.indexOf('DINGIN') !== -1 || acSt.indexOf('OPTIMAL') !== -1) {
+            acBadge = '<span style="font-size:10.5px; font-weight:800; color:#10b981; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.3); padding:2px 7px; border-radius:3px;">❄️ DINGIN (RFU)</span>';
+          } else if (acSt.indexOf('MONITORING') !== -1 || acSt.indexOf('KURANG') !== -1) {
+            acBadge = '<span style="font-size:10.5px; font-weight:800; color:#fbbf24; background:rgba(251,191,36,0.15); border:1px solid rgba(251,191,36,0.4); padding:2px 7px; border-radius:3px;">❄️ KURANG DINGIN</span>';
+          } else {
+            acBadge = '<span style="font-size:10.5px; font-weight:800; color:#ef4444; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); padding:2px 7px; border-radius:3px;">❄️ RUSAK / ANGIN</span>';
+          }
+        } else {
+          acBadge = '<span style="font-size:10px; font-weight:700; color:#38bdf8; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.25); padding:2px 6px; border-radius:3px;">❄️ BER-AC (BELUM DICEK)</span>';
+        }
+      }
+
+      // 2. Target HM Inspeksi Elektrikal (Interval Kelipatan 250 HM)
+      var elecTargetInspHM = 0;
+      var elecRemainingHM = 0;
+      var elecUrgencyCode = 'NORMAL';
+      var elecUrgencyLabel = 'NORMAL (&gt; 100 JAM)';
+      var elecBadgeStyle = 'background: rgba(52, 211, 153, 0.12); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);';
+
+      if (currentHM > 0) {
+        var baseTargetElec = Math.ceil((currentHM + 0.1) / 250) * 250;
+        elecTargetInspHM = baseTargetElec;
+
+        if (latestInsp && latestInsp.hm > 0) {
+          var servicedTargetElec = Math.round(latestInsp.hm / 250) * 250;
+          if (elecTargetInspHM <= servicedTargetElec || ((currentHM - latestInsp.hm) < 50 && elecTargetInspHM <= servicedTargetElec + 250)) {
+            elecTargetInspHM = servicedTargetElec + 250;
+          }
+        }
+
+        elecRemainingHM = parseFloat((elecTargetInspHM - currentHM).toFixed(1));
+
+        if (elecRemainingHM <= 0) {
+          elecUrgencyCode = 'OVERDUE';
+          elecUrgencyLabel = 'JATUH TEMPO (HARI INI)';
+          elecBadgeStyle = 'background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5);';
+        } else if (elecRemainingHM <= 20) {
+          elecUrgencyCode = 'HARI_INI';
+          elecUrgencyLabel = 'INSPEKSI HARI INI (&le; 20 JAM)';
+          elecBadgeStyle = 'background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4);';
+        } else if (elecRemainingHM <= 40) {
+          elecUrgencyCode = 'BESOK';
+          elecUrgencyLabel = 'PREDIKSI BESOK (&le; 40 JAM)';
+          elecBadgeStyle = 'background: rgba(251, 191, 36, 0.18); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.5);';
+        } else if (elecRemainingHM <= 100) {
+          elecUrgencyCode = 'MONITORING';
+          elecUrgencyLabel = 'MONITORING (&le; 100 JAM)';
+          elecBadgeStyle = 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);';
+        } else {
+          elecUrgencyCode = 'NORMAL';
+          elecUrgencyLabel = 'NORMAL (&gt; 100 JAM)';
+          elecBadgeStyle = 'background: rgba(52, 211, 153, 0.12); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);';
+        }
+      } else {
+        elecUrgencyCode = 'BELUM_ADA_HM';
+        elecUrgencyLabel = 'BELUM ADA LOG HM';
+        elecBadgeStyle = 'background: rgba(148, 163, 184, 0.08); color: #64748b; border: 1px solid rgba(148, 163, 184, 0.2);';
+      }
+
+      // 3. Target HM Inspeksi AC SYSTEM (Interval Kelipatan 150 HM)
+      var acTargetInspHM = 0;
+      var acRemainingHM = 0;
+      var acUrgencyCode = 'NORMAL';
+      var acUrgencyLabel = 'NORMAL (&gt; 100 JAM)';
+      var acBadgeStyle = 'background: rgba(52, 211, 153, 0.12); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);';
+
+      if (hasAC && currentHM > 0) {
+        var baseTargetAC = Math.ceil((currentHM + 0.1) / 150) * 150;
+        acTargetInspHM = baseTargetAC;
+
+        if (latestACInsp && latestACInsp.hm > 0) {
+          var servicedTargetAC = Math.round(latestACInsp.hm / 150) * 150;
+          if (acTargetInspHM <= servicedTargetAC || ((currentHM - latestACInsp.hm) < 30 && acTargetInspHM <= servicedTargetAC + 150)) {
+            acTargetInspHM = servicedTargetAC + 150;
+          }
+        }
+
+        acRemainingHM = parseFloat((acTargetInspHM - currentHM).toFixed(1));
+
+        if (acRemainingHM <= 0) {
+          acUrgencyCode = 'OVERDUE';
+          acUrgencyLabel = 'JATUH TEMPO (HARI INI)';
+          acBadgeStyle = 'background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5);';
+        } else if (acRemainingHM <= 20) {
+          acUrgencyCode = 'HARI_INI';
+          acUrgencyLabel = 'INSPEKSI HARI INI (&le; 20 JAM)';
+          acBadgeStyle = 'background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4);';
+        } else if (acRemainingHM <= 40) {
+          acUrgencyCode = 'BESOK';
+          acUrgencyLabel = 'PREDIKSI BESOK (&le; 40 JAM)';
+          acBadgeStyle = 'background: rgba(251, 191, 36, 0.18); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.5);';
+        } else if (acRemainingHM <= 100) {
+          acUrgencyCode = 'MONITORING';
+          acUrgencyLabel = 'MONITORING (&le; 100 JAM)';
+          acBadgeStyle = 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);';
+        } else {
+          acUrgencyCode = 'NORMAL';
+          acUrgencyLabel = 'NORMAL (&gt; 100 JAM)';
+          acBadgeStyle = 'background: rgba(52, 211, 153, 0.12); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);';
+        }
+      } else if (!hasAC) {
+        acUrgencyCode = 'NON_AC';
+        acUrgencyLabel = 'NON-AC / STANDAR';
+        acBadgeStyle = 'background: rgba(148, 163, 184, 0.08); color: #64748b; border: 1px solid rgba(148, 163, 184, 0.2);';
+      } else {
+        acUrgencyCode = 'BELUM_ADA_HM';
+        acUrgencyLabel = 'BELUM ADA LOG HM';
+        acBadgeStyle = 'background: rgba(148, 163, 184, 0.08); color: #64748b; border: 1px solid rgba(148, 163, 184, 0.2);';
+      }
+
+      scheduleList.push({
+        noUnit: code,
+        model: info.model || unitObj.model || '-',
+        tipe: unitClassification,
+        currentHM: currentHM,
+        lastDate: info.tanggal,
+        latestInsp: latestInsp,
+        latestACInsp: latestACInsp,
+        latestAnyInsp: latestAnyInsp,
+
+        // Metrik Elektrikal (Interval 250 HM)
+        elecTargetInspHM: elecTargetInspHM,
+        elecRemainingHM: elecRemainingHM,
+        elecUrgencyCode: elecUrgencyCode,
+        elecUrgencyLabel: elecUrgencyLabel,
+        elecBadgeStyle: elecBadgeStyle,
+
+        // Metrik AC SYSTEM (Interval 150 HM)
+        acTargetInspHM: acTargetInspHM,
+        acRemainingHM: acRemainingHM,
+        acUrgencyCode: acUrgencyCode,
+        acUrgencyLabel: acUrgencyLabel,
+        acBadgeStyle: acBadgeStyle,
+
+        // Properti Kompatibilitas Bawaan
+        targetInspHM: elecTargetInspHM,
+        remainingHM: elecRemainingHM,
+        urgencyCode: elecUrgencyCode,
+        urgencyLabel: elecUrgencyLabel,
+        badgeStyle: elecBadgeStyle,
+
+        hasAC: hasAC,
+        acBadge: acBadge
+      });
+    });
+
+    globalInspectionScheduleData = scheduleList;
+
+    updateInspectionMetricsAndSpotlights();
+    renderInspectionScheduleRows();
+  }
+  window.renderNextInspectionScheduleTable = renderNextInspectionScheduleTable;
+
+  function updateInspectionMetricsAndSpotlights() {
+    var data = globalInspectionScheduleData || [];
+    var isAcMode = (currentInspectionSystemFilter === 'AC');
+
+    var targetList = data.filter(function (x) {
+      if (currentInspectionUnitTypeFilter !== 'ALL' && x.tipe !== currentInspectionUnitTypeFilter) return false;
+      if (isAcMode && !x.hasAC) return false;
+      return true;
+    });
+
+    var todayList = targetList.filter(function (x) {
+      var rem = isAcMode ? x.acRemainingHM : x.elecRemainingHM;
+      var urg = isAcMode ? x.acUrgencyCode : x.elecUrgencyCode;
+      return x.currentHM > 0 && (rem <= 20 || urg === 'OVERDUE');
+    });
+
+    var tomorrowList = targetList.filter(function (x) {
+      var rem = isAcMode ? x.acRemainingHM : x.elecRemainingHM;
+      return x.currentHM > 0 && rem > 20 && rem <= 40;
+    });
+
+    var overdueList = targetList.filter(function (x) {
+      var rem = isAcMode ? x.acRemainingHM : x.elecRemainingHM;
+      var urg = isAcMode ? x.acUrgencyCode : x.elecUrgencyCode;
+      return x.currentHM > 0 && (urg === 'OVERDUE' || rem <= 0);
+    });
+
+    setMetricText('inspMetricToday', todayList.length + ' Unit');
+    setMetricText('inspMetricTomorrow', tomorrowList.length + ' Unit');
+    setMetricText('inspMetricOverdue', overdueList.length + ' Unit');
+
+    var allLogs = (window.globalInspectionLogs && window.globalInspectionLogs.length > 0)
+      ? window.globalInspectionLogs
+      : (window.appDataCache && window.appDataCache.inspection && window.appDataCache.inspection.data ? window.appDataCache.inspection.data : []);
+
+    var histCount = isAcMode
+      ? allLogs.filter(function (i) { return i.tipeInspeksi === 'AC_SYSTEM' || String(i.catatan || '').indexOf('[INSPEKSI AC]') !== -1; }).length
+      : allLogs.length;
+    setMetricText('inspMetricHistoryCount', histCount + (isAcMode ? ' Log AC' : ' Log'));
+
+    setMetricText('inspTodayBadgeCount', todayList.length + ' Unit');
+    setMetricText('inspTomorrowBadgeCount', tomorrowList.length + ' Unit');
+    setMetricText('inspOverdueBadgeCount', overdueList.length + ' Unit');
+
+    renderSpotlightInspContainers(todayList, tomorrowList, overdueList);
+  }
+  window.updateInspectionMetricsAndSpotlights = updateInspectionMetricsAndSpotlights;
+
+  function renderSpotlightInspContainers(todayList, tomorrowList, overdueList) {
+    var cToday = document.getElementById('inspTodayListContainer');
+    var cTomorrow = document.getElementById('inspTomorrowListContainer');
+    var cOverdue = document.getElementById('inspOverdueListContainer');
+    var isAcMode = (currentInspectionSystemFilter === 'AC');
+    var formMode = isAcMode ? 'ac' : 'elec';
+
+    if (cToday) {
+      if (!todayList || todayList.length === 0) {
+        cToday.innerHTML = '<div style="text-align: center; padding: 14px; font-size: 11.5px; color: var(--text-muted);">✅ Tidak ada unit jatuh tempo inspeksi hari ini.</div>';
+      } else {
+        var hToday = '';
+        todayList.forEach(function (item) {
+          var safeU = escapeHtml(item.noUnit);
+          var safeM = escapeHtml(item.model);
+          var remHM = isAcMode ? item.acRemainingHM : item.elecRemainingHM;
+          var tgtHM = isAcMode ? item.acTargetInspHM : item.elecTargetInspHM;
+          var sisaTxt = remHM <= 0 ? ('Lewat ' + Math.abs(remHM).toFixed(1) + ' Jam') : ('Sisa ' + remHM.toFixed(1) + ' Jam');
+          hToday += '<div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: var(--radius-sm); padding: 7px 10px; gap: 8px;">' +
+            '<div>' +
+            '<div style="display: flex; align-items: center; gap: 6px;">' +
+            '<strong style="color: #ffffff; font-size: 12.5px;">' + safeU + '</strong>' +
+            '<span style="font-size: 10.5px; color: var(--text-muted);">(' + safeM + ')</span>' +
+            '<span style="font-size: 9.5px; font-weight: 800; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 1px 5px; border-radius: 3px;">' + escapeHtml(item.tipe) + '</span>' +
+            (isAcMode ? ' <span style="font-size: 9.5px; font-weight: 800; background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 1px 5px; border-radius: 3px;">❄️ AC 150HM</span>' : '') +
+            '</div>' +
+            '<div style="font-size: 10.5px; color: var(--text-dim); margin-top: 2px;">' +
+            'HM: ' + item.currentHM.toFixed(1) + ' · Target: ' + tgtHM.toFixed(1) + ' · <strong style="color: #f87171;">' + sisaTxt + '</strong>' +
+            '</div>' +
+            '</div>' +
+            '<button type="button" class="btn-submit" style="padding: 3px 8px; font-size: 10.5px; white-space: nowrap; flex-shrink: 0;" onclick="applyUnitToInspectionForm(\'' + safeU + '\', ' + item.currentHM + ', \'' + formMode + '\')">+ Input</button>' +
+            '</div>';
+        });
+        cToday.innerHTML = hToday;
+      }
+    }
+
+    if (cTomorrow) {
+      if (!tomorrowList || tomorrowList.length === 0) {
+        cTomorrow.innerHTML = '<div style="text-align: center; padding: 14px; font-size: 11.5px; color: var(--text-muted);">ℹ️ Tidak ada unit dalam proyeksi inspeksi besok (&le; 40 Jam).</div>';
+      } else {
+        var hTomorrow = '';
+        tomorrowList.forEach(function (item) {
+          var safeU = escapeHtml(item.noUnit);
+          var safeM = escapeHtml(item.model);
+          var remHM = isAcMode ? item.acRemainingHM : item.elecRemainingHM;
+          var tgtHM = isAcMode ? item.acTargetInspHM : item.elecTargetInspHM;
+          hTomorrow += '<div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: var(--radius-sm); padding: 7px 10px; gap: 8px;">' +
+            '<div>' +
+            '<div style="display: flex; align-items: center; gap: 6px;">' +
+            '<strong style="color: #ffffff; font-size: 12.5px;">' + safeU + '</strong>' +
+            '<span style="font-size: 10.5px; color: var(--text-muted);">(' + safeM + ')</span>' +
+            (isAcMode ? ' <span style="font-size: 9.5px; font-weight: 800; background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 1px 5px; border-radius: 3px;">❄️ AC 150HM</span>' : '') +
+            '</div>' +
+            '<div style="font-size: 10.5px; color: var(--text-dim); margin-top: 2px;">' +
+            'HM: ' + item.currentHM.toFixed(1) + ' · Target: ' + tgtHM.toFixed(1) + ' · <strong style="color: #fbbf24;">Sisa ' + remHM.toFixed(1) + ' Jam</strong>' +
+            '</div>' +
+            '</div>' +
+            '<button type="button" class="btn-secondary" style="padding: 3px 8px; font-size: 10.5px; color: var(--accent-orange); border-color: rgba(245, 158, 11, 0.4); white-space: nowrap; flex-shrink: 0;" onclick="applyUnitToInspectionForm(\'' + safeU + '\', ' + item.currentHM + ', \'' + formMode + '\')">+ Siapkan</button>' +
+            '</div>';
+        });
+        cTomorrow.innerHTML = hTomorrow;
+      }
+    }
+
+    if (cOverdue) {
+      if (!overdueList || overdueList.length === 0) {
+        cOverdue.innerHTML = '<div style="text-align: center; padding: 14px; font-size: 11.5px; color: var(--text-muted);">✅ Tidak ada unit jatuh tempo overdue.</div>';
+      } else {
+        var hOverdue = '';
+        overdueList.forEach(function (item) {
+          var safeU = escapeHtml(item.noUnit);
+          var safeM = escapeHtml(item.model);
+          var remHM = isAcMode ? item.acRemainingHM : item.elecRemainingHM;
+          var sisaTxt = 'Lewat ' + Math.abs(remHM).toFixed(1) + ' Jam';
+          hOverdue += '<div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); border: 1px solid rgba(239, 68, 68, 0.45); border-radius: var(--radius-sm); padding: 7px 10px; gap: 8px;">' +
+            '<div>' +
+            '<div style="display: flex; align-items: center; gap: 6px;">' +
+            '<strong style="color: #ffffff; font-size: 12.5px;">' + safeU + '</strong>' +
+            '<span style="font-size: 10.5px; color: var(--text-muted);">(' + safeM + ')</span>' +
+            (isAcMode ? ' <span style="font-size: 9.5px; font-weight: 800; background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 1px 5px; border-radius: 3px;">❄️ AC 150HM</span>' : '') +
+            '</div>' +
+            '<div style="font-size: 10.5px; color: var(--text-dim); margin-top: 2px;">' +
+            'HM: ' + item.currentHM.toFixed(1) + ' · <strong style="color: #ef4444;">' + sisaTxt + '</strong>' +
+            '</div>' +
+            '</div>' +
+            '<button type="button" class="btn-submit" style="padding: 3px 8px; font-size: 10.5px; white-space: nowrap; flex-shrink: 0;" onclick="applyUnitToInspectionForm(\'' + safeU + '\', ' + item.currentHM + ', \'' + formMode + '\')">+ Input</button>' +
+            '</div>';
+        });
+        cOverdue.innerHTML = hOverdue;
+      }
+    }
+  }
+
+  function renderInspectionScheduleRows(dataList) {
+    var tbody = document.getElementById('inspScheduleTableBody');
+    if (!tbody) return;
+
+    var isAcMode = (currentInspectionSystemFilter === 'AC');
+
+    var filtered = (dataList || globalInspectionScheduleData).filter(function (item) {
+      // Filter Tipe Unit
+      if (currentInspectionUnitTypeFilter !== 'ALL' && item.tipe !== currentInspectionUnitTypeFilter) {
+        return false;
+      }
+      // Filter Sistem
+      if (isAcMode && !item.hasAC) {
+        return false;
+      }
+      // Filter Status Kartu
+      var remHM = isAcMode ? item.acRemainingHM : item.elecRemainingHM;
+      var urgCode = isAcMode ? item.acUrgencyCode : item.elecUrgencyCode;
+
+      if (currentInspectionCardFilter === 'HARI_INI' && (remHM > 20 && urgCode !== 'OVERDUE')) {
+        return false;
+      }
+      if (currentInspectionCardFilter === 'BESOK' && (remHM <= 20 || remHM > 40)) {
+        return false;
+      }
+      if (currentInspectionCardFilter === 'OVERDUE' && (urgCode !== 'OVERDUE' && remHM > 0)) {
+        return false;
+      }
+      // Filter Pencarian
+      if (currentInspectionSearchQuery) {
+        var q = currentInspectionSearchQuery.toUpperCase();
+        var matchU = String(item.noUnit || '').toUpperCase().indexOf(q) !== -1;
+        var matchM = String(item.model || '').toUpperCase().indexOf(q) !== -1;
+        var matchT = String(item.tipe || '').toUpperCase().indexOf(q) !== -1;
+        if (!matchU && !matchM && !matchT) return false;
+      }
+      return true;
+    });
+
+    // Urutkan: Overdue / sisa HM terkecil berada paling atas berdasarkan sistem aktif
+    filtered.sort(function (a, b) {
+      var remA = isAcMode ? a.acRemainingHM : a.elecRemainingHM;
+      var remB = isAcMode ? b.acRemainingHM : b.elecRemainingHM;
+      if (a.currentHM > 0 && b.currentHM > 0) return remA - remB;
+      if (a.currentHM > 0 && b.currentHM <= 0) return -1;
+      if (a.currentHM <= 0 && b.currentHM > 0) return 1;
+      return a.noUnit.localeCompare(b.noUnit);
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 25px; color: var(--text-muted); font-size: 12px;">Tidak ada data unit yang sesuai dengan filter yang dipilih.</td></tr>';
+      return;
+    }
+
+    var html = '';
+    filtered.forEach(function (row, idx) {
+      var safeU = escapeHtml(row.noUnit);
+      var safeM = escapeHtml(row.model);
+
+      var inspRecord = isAcMode
+        ? row.latestACInsp
+        : (row.latestAnyInsp || row.latestInsp || row.latestACInsp);
+
+      var lastInspText = '-';
+      if (inspRecord && inspRecord.tanggal) {
+        var fmtDate = formatDateDDMMYYYY(inspRecord.tanggal);
+        var hmStr = inspRecord.hm > 0 ? (inspRecord.hm.toLocaleString('id-ID') + ' HM') : '';
+        var sysTag = inspRecord.isAc
+          ? '<span style="color: #38bdf8; font-size: 10px; font-weight: 700;">❄️ AC</span>'
+          : '<span style="color: #fbbf24; font-size: 10px; font-weight: 700;">⚡ Elec</span>';
+        lastInspText = '<div style="font-weight: 800; color: #0f172a; font-size: 12px; line-height: 1.2;">' + fmtDate + '</div>' +
+          (hmStr ? '<div style="font-size: 10.5px; color: var(--text-dim); margin-top: 2px;">' + hmStr + ' · ' + sysTag + '</div>' : '<div style="margin-top: 2px;">' + sysTag + '</div>');
+      }
+
+      var rowTargetHM = isAcMode ? row.acTargetInspHM : row.elecTargetInspHM;
+      var rowRemainingHM = isAcMode ? row.acRemainingHM : row.elecRemainingHM;
+      var rowUrgencyLabel = isAcMode ? row.acUrgencyLabel : row.elecUrgencyLabel;
+      var rowBadgeStyle = isAcMode ? row.acBadgeStyle : row.elecBadgeStyle;
+      var formMode = isAcMode ? 'ac' : 'elec';
+
+      var sisaBadge = '-';
+      if (row.currentHM > 0) {
+        if (rowRemainingHM <= 0) {
+          sisaBadge = '<span style="color: #0f172a; font-weight: 800;">Lewat ' + Math.abs(rowRemainingHM).toFixed(1) + ' Jam</span>';
+        } else {
+          sisaBadge = '<span style="color: #0f172a; font-weight: 800;">' + rowRemainingHM.toFixed(1) + ' Jam</span>';
+        }
+      }
+
+      html += '<tr>' +
+        '<td style="text-align: center; color: var(--text-muted); font-weight: 600;">' + (idx + 1) + '</td>' +
+        '<td><strong style="color: #0f172a; font-size: 13px;">' + safeU + '</strong></td>' +
+        '<td><strong style="color: var(--text-main); font-size: 12px;">' + safeM + '</strong></td>' +
+        '<td style="text-align: right; font-weight: 700; color: var(--text-main);">' + (row.currentHM > 0 ? row.currentHM.toFixed(1) : '-') + '</td>' +
+        '<td style="text-align: center; color: var(--text-muted); font-size: 11px;">' + escapeHtml(row.lastDate || '-') + '</td>' +
+        '<td style="text-align: right; font-weight: 700; color: var(--accent-orange);">' + (rowTargetHM > 0 ? rowTargetHM.toFixed(1) : '-') + '</td>' +
+        '<td style="text-align: right;">' + sisaBadge + '</td>' +
+        '<td style="text-align: center;"><span style="font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 4px; display: inline-block; ' + rowBadgeStyle + '">' + rowUrgencyLabel + '</span></td>' +
+        '<td style="text-align: center;">' +
+        '<button type="button" class="btn-submit" style="padding: 4px 10px; font-size: 11px; white-space: nowrap;" onclick="applyUnitToInspectionForm(\'' + safeU + '\', ' + row.currentHM + ', \'' + formMode + '\')">+ Input</button>' +
+        '</td>' +
+        '</tr>';
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  // ============================================================================
+  // 5. INTERAKSI FILTER JADWAL INSPEKSI
+  // ============================================================================
+
+  function filterInspectionUnitType(type) {
+    currentInspectionUnitTypeFilter = (type || 'ALL').toUpperCase();
+
+    var pills = ['ALL', 'HAULER', 'DIGGER', 'ANCILLARY', 'SUPPORT'];
+    pills.forEach(function (p) {
+      var btn = document.getElementById('btnFilterInsp-' + p);
+      if (btn) btn.classList.toggle('active', p === currentInspectionUnitTypeFilter);
+    });
+
+    updateInspectionMetricsAndSpotlights();
+    renderInspectionScheduleRows();
+  }
+  window.filterInspectionUnitType = filterInspectionUnitType;
+
+  function filterInspectionSystemType(sys) {
+    currentInspectionSystemFilter = (sys || 'ALL').toUpperCase();
+
+    var pills = ['ALL', 'ELEC', 'AC'];
+    pills.forEach(function (p) {
+      var btn = document.getElementById('btnFilterInspSys-' + p);
+      if (btn) btn.classList.toggle('active', p === currentInspectionSystemFilter);
+    });
+
+    updateInspectionMetricsAndSpotlights();
+    renderInspectionScheduleRows();
+  }
+  window.filterInspectionSystemType = filterInspectionSystemType;
+
+  function closeInspectionSpotlightPanel() {
+    var spotSection = document.getElementById('inspSpotlightSection');
+    var boxToday = document.getElementById('inspTodaySpotlightBox');
+    var boxTomorrow = document.getElementById('inspTomorrowSpotlightBox');
+    var boxOverdue = document.getElementById('inspOverdueSpotlightBox');
+    if (spotSection) spotSection.style.display = 'none';
+    if (boxToday) boxToday.style.display = 'none';
+    if (boxTomorrow) boxTomorrow.style.display = 'none';
+    if (boxOverdue) boxOverdue.style.display = 'none';
+
+    var cards = ['inspCardToday', 'inspCardTomorrow', 'inspCardOverdue'];
+    cards.forEach(function (cid) {
+      var el = document.getElementById(cid);
+      if (el) el.style.borderColor = 'var(--border-card)';
+    });
+
+    currentInspectionCardFilter = 'ALL';
+    renderInspectionScheduleRows();
+  }
+  window.closeInspectionSpotlightPanel = closeInspectionSpotlightPanel;
+
+  function filterInspectionCardStatus(status) {
+    var spotSection = document.getElementById('inspSpotlightSection');
+    var boxToday = document.getElementById('inspTodaySpotlightBox');
+    var boxTomorrow = document.getElementById('inspTomorrowSpotlightBox');
+    var boxOverdue = document.getElementById('inspOverdueSpotlightBox');
+
+    // Cek apakah sedang toggle off (kartu yang sama diklik ulang saat spotlight aktif)
+    var isTogglingOff = false;
+    if (status === 'HARI_INI' && spotSection && spotSection.style.display !== 'none' && boxToday && boxToday.style.display !== 'none') {
+      isTogglingOff = true;
+    } else if (status === 'BESOK' && spotSection && spotSection.style.display !== 'none' && boxTomorrow && boxTomorrow.style.display !== 'none') {
+      isTogglingOff = true;
+    } else if (status === 'OVERDUE' && spotSection && spotSection.style.display !== 'none' && boxOverdue && boxOverdue.style.display !== 'none') {
+      isTogglingOff = true;
+    }
+
+    if (isTogglingOff) {
+      closeInspectionSpotlightPanel();
+      return;
+    }
+
+    currentInspectionCardFilter = status;
+
+    var cards = ['inspCardToday', 'inspCardTomorrow', 'inspCardOverdue'];
+    cards.forEach(function (cid) {
+      var el = document.getElementById(cid);
+      if (el) el.style.borderColor = 'var(--border-card)';
+    });
+
+    if (spotSection) {
+      if (status === 'HARI_INI') {
+        spotSection.style.display = 'grid';
+        if (boxToday) boxToday.style.display = 'block';
+        if (boxTomorrow) boxTomorrow.style.display = 'none';
+        if (boxOverdue) boxOverdue.style.display = 'none';
+        var c1 = document.getElementById('inspCardToday');
+        if (c1) c1.style.borderColor = '#f87171';
+        spotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else if (status === 'BESOK') {
+        spotSection.style.display = 'grid';
+        if (boxTomorrow) boxTomorrow.style.display = 'block';
+        if (boxToday) boxToday.style.display = 'none';
+        if (boxOverdue) boxOverdue.style.display = 'none';
+        var c2 = document.getElementById('inspCardTomorrow');
+        if (c2) c2.style.borderColor = '#fbbf24';
+        spotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else if (status === 'OVERDUE') {
+        spotSection.style.display = 'grid';
+        if (boxOverdue) boxOverdue.style.display = 'block';
+        if (boxToday) boxToday.style.display = 'none';
+        if (boxTomorrow) boxTomorrow.style.display = 'none';
+        var c3 = document.getElementById('inspCardOverdue');
+        if (c3) c3.style.borderColor = '#ef4444';
+        spotSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+
+    renderInspectionScheduleRows();
+  }
+  window.filterInspectionCardStatus = filterInspectionCardStatus;
+
+  function handleInspectionScheduleSearch(query) {
+    currentInspectionSearchQuery = (query || '').trim();
+    renderInspectionScheduleRows();
+  }
+  window.handleInspectionScheduleSearch = handleInspectionScheduleSearch;
+
+  function applyUnitToInspectionForm(noUnit, currentHM, defaultFormType) {
+    var formType = defaultFormType || 'elec';
+    switchInspectionSubTab('input');
+    switchInspectionFormType(formType);
+
+    if (formType === 'elec') {
+      var inpU = document.getElementById('inspNoUnit');
+      var inpHM = document.getElementById('inspHM');
+      if (inpU) {
+        inpU.value = noUnit;
+        handleInspUnitInputChange(noUnit);
+      }
+      if (inpHM && currentHM > 0) inpHM.value = currentHM.toFixed(1);
+
+      var inpMek = document.getElementById('inspInspektorInput');
+      if (inpMek) inpMek.focus();
+    } else {
+      var inpAcU = document.getElementById('inspAcNoUnit');
+      var inpAcHM = document.getElementById('inspAcHM');
+      if (inpAcU) {
+        inpAcU.value = noUnit;
+        handleInspAcUnitInputChange(noUnit);
+      }
+      if (inpAcHM && currentHM > 0) inpAcHM.value = currentHM.toFixed(1);
+
+      var inpAcMek = document.getElementById('inspAcInspektorInput');
+      if (inpAcMek) inpAcMek.focus();
+    }
+  }
+  window.applyUnitToInspectionForm = applyUnitToInspectionForm;
+
+  // ============================================================================
+  // 6. SUBMISSION FORM INSPEKSI ELEKTRIKAL & FORM KHUSUS AC
+  // ============================================================================
+
+  function handleInspectionSubmit(e) {
+    e.preventDefault();
+
+    var inpInsp = document.getElementById('inspInspektorInput');
+    if (inpInsp && inpInsp.value.trim()) addSelectedInspectorFromInput();
+
+    var inspVal = document.getElementById('inspInspektor') ? document.getElementById('inspInspektor').value.trim() : '';
+    if (!inspVal) {
+      showToast('Silakan pilih atau tambahkan minimal 1 nama inspektor elektrikal!', 'error');
+      if (inpInsp) inpInsp.focus();
+      return;
+    }
+
+    var btn = document.getElementById('btnSubmitInspElec');
+    if (typeof setButtonLoading === 'function') {
+      setButtonLoading(btn, true, 'MENYIMPAN CHECKLIST ELEKTRIKAL...');
+    } else if (btn) {
+      btn.disabled = true;
+    }
+
+    var statusUnit = document.getElementById('inspStatusUnit') ? document.getElementById('inspStatusUnit').value : 'RFU';
+    var cabinVal = document.getElementById('inspCabin') ? document.getElementById('inspCabin').value : 'NORMAL SEMUA';
+    var safetyVal = document.getElementById('inspSafety') ? document.getElementById('inspSafety').value : 'NORMAL & AKTIF';
+    var bateraiVal = document.getElementById('inspBaterai') ? document.getElementById('inspBaterai').value : 'BERSIH';
+    var rawCatatan = document.getElementById('inspCatatan') ? document.getElementById('inspCatatan').value.trim() : '';
+
+    var fullCatatan = '[STATUS UNIT: ' + statusUnit + '] ' +
+      '[Cabin: ' + cabinVal + ' | Safety: ' + safetyVal + ' | Battery: ' + bateraiVal + '] ' +
+      (rawCatatan ? rawCatatan : '-');
+
+    var payload = {
+      tipeInspeksi: 'ELEKTRIKAL',
+      tanggal: document.getElementById('inspTanggal') ? document.getElementById('inspTanggal').value : new Date().toISOString().slice(0, 10),
+      jamMulai: document.getElementById('inspJamMulai') ? document.getElementById('inspJamMulai').value : '',
+      jamSelesai: document.getElementById('inspJamSelesai') ? document.getElementById('inspJamSelesai').value : '',
+      noUnit: document.getElementById('inspNoUnit').value,
+      hmUnit: document.getElementById('inspHM').value,
+      statusUnit: statusUnit,
+      kategoriInspeksi: 'ELEKTRIKAL UMUM',
+      inspektor: inspVal,
+      startingMotor: document.getElementById('inspStarting') ? document.getElementById('inspStarting').value : 'NORMAL',
+      alternator: document.getElementById('inspAlternator') ? document.getElementById('inspAlternator').value : 'NORMAL',
+      lightingSystem: document.getElementById('inspLighting') ? document.getElementById('inspLighting').value : 'NORMAL SEMUA',
+      wiringHarness: document.getElementById('inspWiring') ? document.getElementById('inspWiring').value : 'RAPI & AMAN',
+      cabinInstrument: cabinVal,
+      acSystem: 'NORMAL (FORM UTAMA)',
+      safetyDevice: safetyVal,
+      baterai: document.getElementById('inspBaterai') ? document.getElementById('inspBaterai').value : 'BERSIH',
+      catatan: fullCatatan,
+      driveFolderId: localStorage.getItem('AE_DRIVE_FOLDER_ID') || '',
+      imagesBase64: (typeof getMultiPhotosBase64 === 'function') ? getMultiPhotosBase64('insp') : (multiPhotosState.insp || []),
+      captions: (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('insp') : []
+    };
+
+    var currentCaptions = (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('insp') : [];
+
+    globalInspectionLogs.unshift(payload);
+    if (appDataCache && appDataCache.inspection) {
+      appDataCache.inspection.data = globalInspectionLogs;
+    }
+
+    // SINKRONISASI REAL-TIME: Update HM ke memori armada dan mutakhirkan jadwal
+    var inputHM = parseFloat(payload.hmUnit);
+    if (payload.noUnit && !isNaN(inputHM) && inputHM > 0) {
+      var targetUnitCode = String(payload.noUnit).trim().toUpperCase();
+      var foundUnit = (window.globalUnits || []).find(function (u) {
+        return String(u.noUnit || '').trim().toUpperCase() === targetUnitCode;
+      });
+      if (foundUnit) {
+        var currHM = parseFloat(foundUnit.hmTerakhir || foundUnit.HMTerakhir) || 0;
+        if (inputHM > currHM) {
+          foundUnit.hmTerakhir = inputHM;
+          foundUnit.HMTerakhir = inputHM;
+        }
+      }
+      if (typeof renderNextPMScheduleTable === 'function') renderNextPMScheduleTable();
+      renderNextInspectionScheduleTable();
+    }
+
+    if (typeof loadDashboardKPI === 'function') loadDashboardKPI();
+
+    showToast('Menyimpan checklist inspeksi elektrikal & mengunggah ' + (payload.imagesBase64.length) + ' foto...', 'info');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+          else if (btn) btn.disabled = false;
+          if (res && res.success) {
+            if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+              if (res.idInsp) {
+                savePhotoCaptionsMapping(res.idInsp, currentCaptions);
+                savePhotoCaptionsMapping(String(res.idInsp).toUpperCase(), currentCaptions);
+              }
+              if (payload.noUnit && payload.tanggal) {
+                savePhotoCaptionsMapping(payload.noUnit + '_' + payload.tanggal, currentCaptions);
+              }
+            }
+            showToast('Inspeksi elektrikal berhasil dicatat!', 'success');
+            document.getElementById('inspectionForm').reset();
+            resetMultiPhotos('insp');
+            clearSelectedInspectorTags();
+            var elInspTgl = document.getElementById('inspTanggal');
+            if (elInspTgl) elInspTgl.value = new Date().toISOString().slice(0, 10);
+            var elStatus = document.getElementById('inspStatusUnit');
+            if (elStatus && typeof applyStatusColor === 'function') applyStatusColor(elStatus);
+            renderNextInspectionScheduleTable();
+          } else {
+            showToast('Gagal: ' + (res ? res.error : 'Error'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+          else if (btn) btn.disabled = false;
+          showToast('Error: ' + err.message, 'error');
+        })
+        .submitInspectionLog(payload);
+    } else {
+      if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+      else if (btn) btn.disabled = false;
+      if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+        savePhotoCaptionsMapping(payload.imagesBase64, currentCaptions);
+      }
+      showToast('Inspeksi elektrikal disimpan (Offline)', 'success');
+      document.getElementById('inspectionForm').reset();
+      resetMultiPhotos('insp');
+      clearSelectedInspectorTags();
+      var elInspTgl = document.getElementById('inspTanggal');
+      if (elInspTgl) elInspTgl.value = new Date().toISOString().slice(0, 10);
+      var elStatus = document.getElementById('inspStatusUnit');
+      if (elStatus && typeof applyStatusColor === 'function') applyStatusColor(elStatus);
+      renderNextInspectionScheduleTable();
+    }
+  }
+
+  function handleACInspectionSubmit(e) {
+    e.preventDefault();
+
+    var inpAcMek = document.getElementById('inspAcInspektorInput');
+    if (inpAcMek && inpAcMek.value.trim()) addSelectedACInspectorFromInput();
+
+    var acInspVal = document.getElementById('inspAcInspektor') ? document.getElementById('inspAcInspektor').value.trim() : '';
+    if (!acInspVal) {
+      showToast('Silakan pilih atau tambahkan minimal 1 nama teknisi AC!', 'error');
+      if (inpAcMek) inpAcMek.focus();
+      return;
+    }
+
+    var btn = document.getElementById('btnSubmitInspAc');
+    if (typeof setButtonLoading === 'function') {
+      setButtonLoading(btn, true, 'MENYIMPAN CHECKLIST AC...');
+    } else if (btn) {
+      btn.disabled = true;
+    }
+
+    var statusAC = document.getElementById('inspAcStatusUnit') ? document.getElementById('inspAcStatusUnit').value : 'RFU';
+    var kompresorVal = document.getElementById('inspAcKompresor') ? document.getElementById('inspAcKompresor').value : 'NORMAL';
+    var freonVal = document.getElementById('inspAcFreon') ? document.getElementById('inspAcFreon').value : 'NORMAL';
+    var kondensorVal = document.getElementById('inspAcKondensor') ? document.getElementById('inspAcKondensor').value : 'BERSIH';
+    var evaporatorVal = document.getElementById('inspAcEvaporator') ? document.getElementById('inspAcEvaporator').value : 'BERSIH';
+    var blowerVal = document.getElementById('inspAcBlower') ? document.getElementById('inspAcBlower').value : 'NORMAL';
+    var ductingVal = document.getElementById('inspAcDucting') ? document.getElementById('inspAcDucting').value : 'RAPAT';
+    var rawCatatan = document.getElementById('inspAcCatatan') ? document.getElementById('inspAcCatatan').value.trim() : '';
+
+    var fullCatatan = '[INSPEKSI AC] [STATUS: ' + statusAC + '] ' +
+      'Kompresor: ' + kompresorVal + ' | Freon: ' + freonVal + ' | Kondensor: ' + kondensorVal + ' | ' +
+      'Evaporator: ' + evaporatorVal + ' | Blower: ' + blowerVal + ' | Louver: ' + ductingVal + '. ' +
+      'Catatan: ' + (rawCatatan ? rawCatatan : '-');
+
+    var payload = {
+      tipeInspeksi: 'AC_SYSTEM',
+      isACInspection: true,
+      tanggal: document.getElementById('inspAcTanggal') ? document.getElementById('inspAcTanggal').value : new Date().toISOString().slice(0, 10),
+      jamMulai: document.getElementById('inspAcJamMulai') ? document.getElementById('inspAcJamMulai').value : '',
+      jamSelesai: document.getElementById('inspAcJamSelesai') ? document.getElementById('inspAcJamSelesai').value : '',
+      noUnit: document.getElementById('inspAcNoUnit').value,
+      hmUnit: document.getElementById('inspAcHM').value,
+      statusUnit: statusAC,
+      kategoriInspeksi: 'AC SYSTEM',
+      inspektor: acInspVal,
+      startingMotor: '-',
+      alternator: '-',
+      lightingSystem: '-',
+      wiringHarness: 'NORMAL (AC HARNESS)',
+      cabinInstrument: 'AC CONTROLLER & BLOWER',
+      acSystem: statusAC,
+      safetyDevice: '-',
+      baterai: '-',
+      catatan: fullCatatan,
+      driveFolderId: localStorage.getItem('AE_DRIVE_FOLDER_ID') || '',
+      imagesBase64: (typeof getMultiPhotosBase64 === 'function') ? getMultiPhotosBase64('inspAc') : (multiPhotosState.inspAc || []),
+      captions: (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('inspAc') : []
+    };
+
+    var currentCaptions = (typeof getMultiPhotosCaptions === 'function') ? getMultiPhotosCaptions('inspAc') : [];
+
+    globalInspectionLogs.unshift(payload);
+    if (appDataCache && appDataCache.inspection) {
+      appDataCache.inspection.data = globalInspectionLogs;
+    }
+
+    var inputHM = parseFloat(payload.hmUnit);
+    if (payload.noUnit && !isNaN(inputHM) && inputHM > 0) {
+      var targetUnitCode = String(payload.noUnit).trim().toUpperCase();
+      var foundUnit = (window.globalUnits || []).find(function (u) {
+        return String(u.noUnit || '').trim().toUpperCase() === targetUnitCode;
+      });
+      if (foundUnit) {
+        var currHM = parseFloat(foundUnit.hmTerakhir || foundUnit.HMTerakhir) || 0;
+        if (inputHM > currHM) {
+          foundUnit.hmTerakhir = inputHM;
+          foundUnit.HMTerakhir = inputHM;
+        }
+      }
+      if (typeof renderNextPMScheduleTable === 'function') renderNextPMScheduleTable();
+      renderNextInspectionScheduleTable();
+    }
+
+    if (typeof loadDashboardKPI === 'function') loadDashboardKPI();
+
+    showToast('Menyimpan checklist inspeksi AC & mengunggah ' + (payload.imagesBase64.length) + ' foto...', 'info');
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+          else if (btn) btn.disabled = false;
+          if (res && res.success) {
+            if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+              if (res.idInsp) {
+                savePhotoCaptionsMapping(res.idInsp, currentCaptions);
+                savePhotoCaptionsMapping(String(res.idInsp).toUpperCase(), currentCaptions);
+              }
+              if (payload.noUnit && payload.tanggal) {
+                savePhotoCaptionsMapping(payload.noUnit + '_' + payload.tanggal, currentCaptions);
+              }
+            }
+            showToast('Inspeksi AC berhasil dicatat!', 'success');
+            document.getElementById('acInspectionForm').reset();
+            resetMultiPhotos('inspAc');
+            clearSelectedACInspectorTags();
+            var elInspTgl = document.getElementById('inspAcTanggal');
+            if (elInspTgl) elInspTgl.value = new Date().toISOString().slice(0, 10);
+            var elStatus = document.getElementById('inspAcStatusUnit');
+            if (elStatus && typeof applyStatusColor === 'function') applyStatusColor(elStatus);
+            renderNextInspectionScheduleTable();
+          } else {
+            showToast('Gagal: ' + (res ? res.error : 'Error'), 'error');
+          }
+        })
+        .withFailureHandler(function (err) {
+          if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+          else if (btn) btn.disabled = false;
+          showToast('Error: ' + err.message, 'error');
+        })
+        .submitInspectionLog(payload);
+    } else {
+      if (typeof setButtonLoading === 'function') setButtonLoading(btn, false);
+      else if (btn) btn.disabled = false;
+      if (typeof savePhotoCaptionsMapping === 'function' && currentCaptions.length > 0) {
+        savePhotoCaptionsMapping(payload.imagesBase64, currentCaptions);
+      }
+      showToast('Inspeksi AC disimpan (Offline)', 'success');
+      document.getElementById('acInspectionForm').reset();
+      resetMultiPhotos('inspAc');
+      clearSelectedACInspectorTags();
+      var elInspTgl = document.getElementById('inspAcTanggal');
+      if (elInspTgl) elInspTgl.value = new Date().toISOString().slice(0, 10);
+      var elStatus = document.getElementById('inspAcStatusUnit');
+      if (elStatus && typeof applyStatusColor === 'function') applyStatusColor(elStatus);
+      renderNextInspectionScheduleTable();
+    }
+  }
+  window.handleACInspectionSubmit = handleACInspectionSubmit;
+
+  // ============================================================================
+  // 7. MODAL RIWAYAT LOG INSPEKSI & DETAIL
+  // ============================================================================
+
+  function openInspectionHistoryModal() {
+    var modal = document.getElementById('inspectionHistoryModal');
+    if (modal) {
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+    fetchAndRenderInspectionLogs();
+  }
+  window.openInspectionHistoryModal = openInspectionHistoryModal;
+
+  function closeInspectionHistoryModal() {
+    var modal = document.getElementById('inspectionHistoryModal');
+    if (modal) {
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+  }
+  window.closeInspectionHistoryModal = closeInspectionHistoryModal;
+
+  function fetchAndRenderInspectionLogs() {
+    var container = document.getElementById('inspHistoryCardsContainer');
+    if (container) {
+      container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 25px;">Memuat riwayat log inspeksi...</div>';
+    }
+
+    if (typeof fetchInspectionLogs === 'function') {
+      fetchInspectionLogs(true, function (logs) {
+        renderInspectionHistoryCards(logs);
+      });
+    } else {
+      renderInspectionHistoryCards(globalInspectionLogs || []);
+    }
+  }
+  window.fetchAndRenderInspectionLogs = fetchAndRenderInspectionLogs;
+
+  function filterInspectionHistoryCards() {
+    renderInspectionHistoryCards(globalInspectionLogs || []);
+  }
+  window.filterInspectionHistoryCards = filterInspectionHistoryCards;
+
+  function renderInspectionHistoryCards(logs) {
+    var container = document.getElementById('inspHistoryCardsContainer');
+    var badgeEl = document.getElementById('inspHistoryModalBadge');
+    if (!container) return;
+
+    var typeFilter = document.getElementById('inspHistoryTypeFilter') ? document.getElementById('inspHistoryTypeFilter').value : '';
+    var searchInput = document.getElementById('inspHistorySearchInput') ? document.getElementById('inspHistorySearchInput').value.trim().toUpperCase() : '';
+
+    var filtered = (logs || []).filter(function (log) {
+      var isAc = (log.tipeInspeksi === 'AC_SYSTEM' || String(log.catatan || '').indexOf('[INSPEKSI AC]') !== -1);
+      if (typeFilter === 'ELEKTRIKAL' && isAc) return false;
+      if (typeFilter === 'AC_SYSTEM' && !isAc) return false;
+
+      if (searchInput) {
+        var matchU = String(log.noUnit || '').toUpperCase().indexOf(searchInput) !== -1;
+        var matchM = String(log.inspektor || '').toUpperCase().indexOf(searchInput) !== -1;
+        var matchC = String(log.catatan || '').toUpperCase().indexOf(searchInput) !== -1;
+        if (!matchU && !matchM && !matchC) return false;
+      }
+      return true;
+    });
+
+    window._currentFilteredInspHistoryList = filtered || [];
+
+    if (badgeEl) badgeEl.textContent = filtered.length + ' LOG';
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 36px 16px; font-size: 12.5px; border: 1px dashed var(--border-color); border-radius: var(--radius-md);">' +
+        '<div style="font-size: 24px; margin-bottom: 6px;">📋</div>Belum ada riwayat log inspeksi yang sesuai.</div>';
+      return;
+    }
+
+    var tableHtml = '<div style="overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); background: #ffffff;">' +
+      '<table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; min-width: 780px; background: #ffffff; table-layout: fixed;">' +
+      '<thead>' +
+      '<tr style="background: #1e293b; color: #ffffff; border-bottom: 2px solid #334155;">' +
+      '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 15%; min-width: 110px;">TANGGAL</th>' +
+      '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 18%; min-width: 125px;">NOMOR UNIT</th>' +
+      '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 12%; min-width: 90px;">HM UNIT</th>' +
+      '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 20%; min-width: 145px;">JENIS INSPEKSI</th>' +
+      '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 22%; min-width: 150px;">INSPEKTOR</th>' +
+      '<th style="padding: 11px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; text-align: center; width: 13%; min-width: 90px;">DETAIL</th>' +
+      '</tr>' +
+      '</thead>' +
+      '<tbody>';
+
+    filtered.forEach(function (item, idx) {
+      var safeU = escapeHtml(item.noUnit || '-');
+      var safeTgl = escapeHtml(item.tanggal ? formatDateDDMMYYYY(item.tanggal) : '-');
+      var rawHM = item.hmUnit !== undefined && item.hmUnit !== null && item.hmUnit !== '' ? Number(item.hmUnit) : NaN;
+      var hmDisplay = !isNaN(rawHM) ? rawHM.toLocaleString('id-ID') : (escapeHtml(item.hmUnit || '-'));
+      var safeMek = escapeHtml(item.inspektor || '-');
+      var isAc = (item.tipeInspeksi === 'AC_SYSTEM' || String(item.catatan || '').indexOf('[INSPEKSI AC]') !== -1);
+
+      var typeBadge = isAc
+        ? '<span style="display: inline-block; padding: 3px 9px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px; background: rgba(16, 185, 129, 0.15); color: #0f172a; border: 1px solid rgba(16, 185, 129, 0.6);">❄️ AC SYSTEM</span>'
+        : '<span style="display: inline-block; padding: 3px 9px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px; background: rgba(56, 189, 248, 0.15); color: #0f172a; border: 1px solid rgba(56, 189, 248, 0.6);">⚡ ELECTRICAL</span>';
+
+      var photoCount = (item.photosList && item.photosList.length > 0) ? item.photosList.length : (item.imagesBase64 ? item.imagesBase64.length : 0);
+      var photoBadge = photoCount > 0 ? (' <span style="font-size: 10px; color: #d97706; font-weight: 800; background: rgba(245, 158, 11, 0.15); padding: 1px 5px; border-radius: 3px;">📸 ' + photoCount + '</span>') : '';
+
+      var rowBg = idx % 2 === 0 ? 'background: #ffffff;' : 'background: #f8fafc;';
+
+      tableHtml += '<tr style="' + rowBg + ' border-bottom: 1px solid #e2e8f0; transition: background 0.15s;" onmouseover="this.style.background=\'#f1f5f9\'" onmouseout="this.style.background=\'' + (idx % 2 === 0 ? '#ffffff' : '#f8fafc') + '\'">' +
+        '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+        '<div style="font-weight: 700; color: #1e293b; font-size: 12px;">' + safeTgl + '</div>' +
+        '</td>' +
+        '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+        '<div style="font-weight: 800; color: #0f172a; font-size: 12.5px; letter-spacing: 0.3px;">' + safeU + '</div>' +
+        '</td>' +
+        '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+        '<span style="font-weight: 800; color: #d97706; font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, monospace;">' + hmDisplay + '</span>' +
+        '</td>' +
+        '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+        typeBadge +
+        '</td>' +
+        '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+        '<div style="font-weight: 700; color: #1e293b; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;">' + safeMek + photoBadge + '</div>' +
+        '</td>' +
+        '<td style="padding: 10px 8px; text-align: center; vertical-align: middle;">' +
+        '<button type="button" class="btn-secondary" style="padding: 4px 12px; font-size: 11px; font-weight: 800; border-radius: 6px; color: #0f172a; border: 1.5px solid #94a3b8; background: #f8fafc; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background=\'#e2e8f0\'" onmouseout="this.style.background=\'#f8fafc\'" onclick="openDetailInspectionModal(' + idx + ')">Detail</button>' +
+        '</td>' +
+        '</tr>';
+    });
+
+    tableHtml += '</tbody></table></div>';
+    container.innerHTML = tableHtml;
+  }
+
+  function openDetailInspectionModal(indexOrLog) {
+    var modal = document.getElementById('viewInspectionDetailModal');
+    if (!modal) return;
+
+    var log = null;
+    if (typeof indexOrLog === 'object' && indexOrLog !== null) {
+      log = indexOrLog;
+    } else {
+      var logList = window._currentFilteredInspHistoryList || globalInspectionLogs || [];
+      log = logList[indexOrLog];
+    }
+    if (!log) return;
+
+    var isAc = (log.tipeInspeksi === 'AC_SYSTEM' || String(log.catatan || '').indexOf('[INSPEKSI AC]') !== -1);
+
+    var elUnit = document.getElementById('inspDetailUnit');
+    var elModel = document.getElementById('inspDetailModel');
+    var elTypeBadge = document.getElementById('inspDetailTypeBadge');
+    var elTanggal = document.getElementById('inspDetailTanggal');
+    var elWaktu = document.getElementById('inspDetailWaktu');
+    var elHM = document.getElementById('inspDetailHM');
+    var elMek = document.getElementById('inspDetailInspektor');
+    var elCatatan = document.getElementById('inspDetailCatatan');
+    var elChecklist = document.getElementById('inspDetailChecklistContainer');
+    var photoContainer = document.getElementById('inspDetailPhotoContainer');
+
+    var unitObj = (globalUnits || []).find(function (u) {
+      return String(u.noUnit || '').trim().toUpperCase() === String(log.noUnit || '').trim().toUpperCase();
+    }) || {};
+
+    if (elUnit) elUnit.textContent = log.noUnit || '-';
+    if (elModel) elModel.textContent = '(' + (unitObj.model || unitObj.tipe || 'ARMADA TAMBANG') + ')';
+    if (elTypeBadge) {
+      elTypeBadge.textContent = isAc ? '❄️ AC SYSTEM' : '⚡ ELECTRICAL';
+      elTypeBadge.style.color = '#0f172a';
+      elTypeBadge.style.fontWeight = '800';
+    }
+    if (elTanggal) elTanggal.textContent = log.tanggal ? formatDateDDMMYYYY(log.tanggal) : '-';
+    if (elWaktu) elWaktu.textContent = (log.jamMulai || '-') + ' s/d ' + (log.jamSelesai || '-');
+    if (elHM) elHM.textContent = log.hmUnit ? (parseFloat(log.hmUnit).toFixed(1) + ' Jam') : '-';
+    if (elMek) elMek.textContent = log.inspektor || '-';
+
+    if (isAc) {
+      var rawTxt = String(log.catatan || '');
+      var mKompresor = rawTxt.match(/Kompresor:\s*([^|.]+)/i);
+      var mFreon = rawTxt.match(/Freon:\s*([^|.]+)/i);
+      var mKondensor = rawTxt.match(/Kondensor:\s*([^|.]+)/i);
+      var mEvaporator = rawTxt.match(/Evaporator:\s*([^|.]+)/i);
+      var mBlower = rawTxt.match(/Blower:\s*([^|.]+)/i);
+      var mLouver = rawTxt.match(/Louver:\s*([^|.]+)/i);
+      var mCatatan = rawTxt.match(/Catatan:\s*(.+)$/i);
+
+      var valKompresor = mKompresor ? mKompresor[1].trim() : (log.startingMotor !== '-' ? log.startingMotor : 'NORMAL');
+      var valFreon = mFreon ? mFreon[1].trim() : 'NORMAL';
+      var valKondensor = mKondensor ? mKondensor[1].trim() : 'BERSIH';
+      var valEvaporator = mEvaporator ? mEvaporator[1].trim() : 'BERSIH';
+      var valBlower = mBlower ? mBlower[1].trim() : 'NORMAL';
+      var valLouver = mLouver ? mLouver[1].trim() : 'RAPAT';
+      var extraCatatan = mCatatan ? mCatatan[1].trim() : '';
+
+      if (elChecklist) {
+        var acStatusKabin = log.statusUnit || 'DINGIN OPTIMAL (RFU)';
+        elChecklist.innerHTML = '<div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:8px;">Hasil Pemeriksaan Parameter AC:</div>' +
+          '<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:11.5px; line-height:1.45;">' +
+          '<div>Status AC: <strong>' + escapeHtml(acStatusKabin) + '</strong></div>' +
+          '<div>Kompresor: <strong>' + escapeHtml(valKompresor) + '</strong></div>' +
+          '<div>Tekanan Freon: <strong>' + escapeHtml(valFreon) + '</strong></div>' +
+          '<div>Kondensor / Fan: <strong>' + escapeHtml(valKondensor) + '</strong></div>' +
+          '<div>Evaporator: <strong>' + escapeHtml(valEvaporator) + '</strong></div>' +
+          '<div>Motor Blower: <strong>' + escapeHtml(valBlower) + '</strong></div>' +
+          '<div style="grid-column: 1 / -1;">Ducting / Louver: <strong>' + escapeHtml(valLouver) + '</strong></div>' +
+          '</div>';
+      }
+
+      if (elCatatan) {
+        var cleanAcCatatan = extraCatatan ? extraCatatan.replace(/^\[STATUS:[^\]]*\]\s*/i, '').trim() : '';
+        var isAcCatatanValid = (cleanAcCatatan && cleanAcCatatan !== '-' && cleanAcCatatan.toUpperCase() !== 'NIHIL' && cleanAcCatatan.toUpperCase() !== 'N/A');
+        elCatatan.textContent = isAcCatatanValid ? cleanAcCatatan : 'Tidak ada catatan tambahan.';
+      }
+    } else {
+      var rawElecTxt = String(log.catatan || '');
+      var mCabin = rawElecTxt.match(/Cabin:\s*([^|\]]+)/i);
+      var mSafety = rawElecTxt.match(/Safety:\s*([^|\]]+)/i);
+      var mBattery = rawElecTxt.match(/Battery:\s*([^|\]]+)/i);
+
+      var valCabin = log.cabinInstrument || (mCabin ? mCabin[1].trim() : 'NORMAL SEMUA');
+      var valSafety = log.safetyDevice || (mSafety ? mSafety[1].trim() : 'NORMAL & AKTIF');
+      var valBaterai = log.baterai || (mBattery ? mBattery[1].trim() : 'BERSIH');
+
+      if (elChecklist) {
+        elChecklist.innerHTML = '<div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:8px;">Hasil Checklist Elektrikal:</div>' +
+          '<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:11.5px; line-height:1.45;">' +
+          '<div>Starter: <strong>' + escapeHtml(log.startingMotor || 'NORMAL') + '</strong></div>' +
+          '<div>Alternator: <strong>' + escapeHtml(log.alternator || 'NORMAL') + '</strong></div>' +
+          '<div>Lighting: <strong>' + escapeHtml(log.lightingSystem || 'NORMAL') + '</strong></div>' +
+          '<div>Wiring: <strong>' + escapeHtml(log.wiringHarness || 'RAPI') + '</strong></div>' +
+          '<div>Cabin / Gauges: <strong>' + escapeHtml(valCabin) + '</strong></div>' +
+          '<div>Safety Device: <strong>' + escapeHtml(valSafety) + '</strong></div>' +
+          '<div style="grid-column: 1 / -1;">Battery & Cable: <strong>' + escapeHtml(valBaterai) + '</strong></div>' +
+          '</div>';
+      }
+      if (elCatatan) {
+        var rawElecCatatan = log.catatan || '';
+        var cleanElecCatatan = rawElecCatatan
+          .replace(/^\[STATUS\s*UNIT:[^\]]*\]\s*/i, '')
+          .replace(/\[Cabin:[^\]]*\]\s*/i, '')
+          .replace(/^\[INSPEKSI\s*AC\]\s*/i, '')
+          .trim();
+        var isElecCatatanValid = (cleanElecCatatan && cleanElecCatatan !== '-' && cleanElecCatatan.toUpperCase() !== 'NIHIL' && cleanElecCatatan.toUpperCase() !== 'N/A');
+        elCatatan.textContent = isElecCatatanValid ? cleanElecCatatan : 'Tidak ada catatan tambahan.';
+      }
+    }
+
+    if (photoContainer) {
+      var photos = log.photosList || [];
+      var captions = log.photoCaptions || [];
+
+      if (photos.length === 0 && log.imagesBase64 && log.imagesBase64.length > 0) {
+        photos = log.imagesBase64;
+      }
+
+      if (photos.length === 0) {
+        photoContainer.innerHTML = '<div style="font-size: 11.5px; color: var(--text-dim); padding: 8px;">Tidak ada lampiran foto temuan inspeksi.</div>';
+      } else {
+        var hPhotos = '<div style="display: flex; gap: 8px; flex-wrap: wrap;">';
+        photos.forEach(function (pUrl, pIdx) {
+          var cleanUrl = getDirectDriveImageUrl(pUrl);
+          var capText = captions[pIdx] || 'Foto Temuan #' + (pIdx + 1);
+          hPhotos += '<div style="display: flex; flex-direction: column; width: 110px;">' +
+            '<img src="' + cleanUrl + '" style="width: 110px; height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-color); cursor: pointer;" onclick="openImageModal(\'' + cleanUrl + '\', \'' + escapeHtml(capText) + '\')">' +
+            '<span style="font-size: 9.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.2; word-break: break-word;">' + escapeHtml(capText) + '</span>' +
+            '</div>';
+        });
+        hPhotos += '</div>';
+        photoContainer.innerHTML = hPhotos;
+      }
+    }
+
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+  window.openDetailInspectionModal = openDetailInspectionModal;
+
+  function closeDetailInspectionModal() {
+    var modal = document.getElementById('viewInspectionDetailModal');
+    if (modal) {
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+  }
+  window.closeDetailInspectionModal = closeDetailInspectionModal;
+</script>
